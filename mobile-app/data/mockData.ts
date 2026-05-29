@@ -1,0 +1,242 @@
+// 📁 data/mockData.ts
+// 개발 및 데모용 Mock 데이터 (실제 앱에서는 백엔드 API로 대체됨)
+
+import { DailyReport } from '../types';
+
+export const MOCK_DAILY_REPORT: DailyReport = {
+  date: '2026-05-29',
+  headline: '🔥 미국 반도체법 추가 보조금 & 남미 가뭄으로 곡물값 급등 — 숨은 수혜 3종 포착',
+  marketMood: '리스크 온/오프 혼조세 — 기술주 강세 vs 소비재 약세',
+  generatedAt: new Date().toISOString(),
+  totalNewsAnalyzed: 847,
+  topNews: [
+    {
+      id: 'news-001',
+      title: 'US CHIPS Act Awards Additional $2.1B to Domestic Semiconductor Manufacturers',
+      titleKo: '미국 반도체법(CHIPS Act), 국내 반도체 제조사에 추가 21억 달러 보조금 지급',
+      summary: '미국 정부가 반도체법(CHIPS Act) 추가 재원 21억 달러를 자국 칩 제조사들에게 지급하기로 확정했습니다. 이는 미중 기술 전쟁 속 공급망 내재화 속도를 더욱 가속화하는 조치입니다. TSMC, 인텔, 삼성전자 등 미국 내 팹 증설 기업들이 직접 수혜권에 들어왔습니다.',
+      aiAnalysis: '이 뉴스는 단순한 보조금 지급이 아닙니다. 미국이 반도체 자급자족 체계를 완성하겠다는 정치적 의지의 시그널입니다. 공급망 관점에서 보면: ①팹 건설 → 반도체 장비 수요 폭발 ②장비 → 핵심 소재(포토레지스트·특수가스) 수요 연쇄 ③소재 → 국내 화학/소재주 수혜. 일반 투자자들이 놓치기 쉬운 2·3차 효과가 여기에 있습니다.',
+      category: '반도체',
+      publishedAt: new Date(Date.now() - 3600000).toISOString(),
+      source: 'Reuters',
+      sourceUrl: 'https://reuters.com',
+      importance: 5,
+      marketImpact: 'bullish',
+      butterflyEffects: [
+        {
+          level: 1,
+          description: '미국 내 팹(반도체 공장) 증설 가속화 → TSMC 애리조나, 삼성 텍사스 공장 투자 확대',
+          indicator: 'CHIPS Act 집행률',
+        },
+        {
+          level: 2,
+          description: '반도체 장비 발주 폭증 → ASML, 램리서치, Applied Materials 장비 백로그 증가',
+          indicator: '반도체 장비 수주잔고 (BBR)',
+        },
+        {
+          level: 3,
+          description: '장비 가동 → 포토레지스트·특수가스·CMP 슬러리 등 핵심 소재 수요 급증 → 동진쎄미켐·솔브레인·한솔케미칼 직접 수혜',
+          indicator: '반도체 소재 수출액',
+        },
+      ],
+      beneficiaryStocks: [
+        {
+          name: '동진쎄미켐',
+          ticker: '005290.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: '미국 팹 증설 시 포토레지스트 핵심 공급사. 삼성·SK하이닉스 대비 직접 노출도 높음.',
+          sector: '반도체 소재',
+        },
+        {
+          name: '한미반도체',
+          ticker: '042700.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: 'HBM 핵심 장비(TC본더) 세계 점유율 1위. CHIPS Act 발주 물량 증가 직접 수혜.',
+          sector: '반도체 장비',
+        },
+        {
+          name: 'Applied Materials',
+          ticker: 'AMAT',
+          market: 'NASDAQ',
+          relevance: 'high',
+          reason: '반도체 증착·식각 장비 글로벌 1위. 미국 팹 증설 최대 수혜 장비사.',
+          sector: '반도체 장비',
+        },
+        {
+          name: '솔브레인',
+          ticker: '036830.KS',
+          market: 'KRX',
+          relevance: 'medium',
+          reason: '반도체 공정 화학소재(식각액·도금액) 전문. 팹 가동률 상승 시 매출 연동.',
+          sector: '반도체 소재',
+        },
+      ],
+      riskFactors: [
+        {
+          title: '보조금 집행 지연 가능성',
+          description: '미국 의회 예산 분쟁으로 실제 집행이 6~12개월 지연될 수 있습니다. 발표 → 실수혜 간격을 반드시 확인하세요.',
+          severity: 'medium',
+        },
+        {
+          title: '중국 보복 관세 리스크',
+          description: '미국의 반도체 자급 가속화는 중국의 희토류·갈륨 수출 제한 카드를 유발할 수 있습니다.',
+          severity: 'high',
+        },
+        {
+          title: '단기 테마성 과열 주의',
+          description: '반도체 소재·장비주는 뉴스 당일 급등 후 실적 발표까지 조정받는 패턴이 반복됩니다. 분할 매수 전략 권장.',
+          severity: 'medium',
+        },
+      ],
+      aiConfidence: 88,
+      tags: ['CHIPS Act', '반도체', '미중무역', '공급망', '소재주', '장비주'],
+    },
+    {
+      id: 'news-002',
+      title: 'Severe Drought Across South America Threatens Grain Harvest, Prices Surge',
+      titleKo: '남미 광역 가뭄으로 곡물 수확 타격, 국제 곡물 가격 급등세 전환',
+      summary: '브라질·아르헨티나를 중심으로 라니냐 영향의 대규모 가뭄이 지속되며 대두·옥수수·밀 생산량이 전년 대비 18% 감소 전망입니다. 국제 농산물 선물 가격이 3주 만에 12% 상승했습니다. 식품 물가 전반에 상방 압력이 형성되고 있습니다.',
+      aiAnalysis: '곡물 가격 급등은 농업 뉴스처럼 보이지만, 주식 시장에서는 의외의 수혜 구조가 작동합니다. 사료 값 상승 → 축산 비용 급등 → 소비자 육류 대신 가공육/대체육 소비 전환. 국내 배합사료 기업들은 원가 부담이 있지만, 동시에 가격 전가력이 높아 마진 방어에 성공한 역사가 있습니다. 진짜 수혜는 대체단백질 & 수산물 업체에 있습니다.',
+      category: '식품/농업',
+      publishedAt: new Date(Date.now() - 7200000).toISOString(),
+      source: 'Bloomberg',
+      sourceUrl: 'https://bloomberg.com',
+      importance: 4,
+      marketImpact: 'bearish',
+      butterflyEffects: [
+        {
+          level: 1,
+          description: '남미 가뭄 → 대두·옥수수 생산 18% 감소 → 국제 곡물 선물가 급등',
+          indicator: 'CBOT 대두 선물 가격',
+        },
+        {
+          level: 2,
+          description: '곡물가 상승 → 사료 원가 급등 → 축산 농가 수익성 악화 → 육류 공급 감소',
+          indicator: '사료 생산자물가지수(PPI)',
+        },
+        {
+          level: 3,
+          description: '육류 가격 상승 → 소비자 대체재(수산물·가공육·대체단백질) 수요 급증 → 관련 기업 수혜',
+          indicator: '소비자물가 식품지수(CPI Food)',
+        },
+      ],
+      beneficiaryStocks: [
+        {
+          name: '사조대림',
+          ticker: '003960.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: '수산물 가공 1위. 육류 대체 수요 증가 시 직접 수혜. 참치캔·냉동어류 마진 개선 기대.',
+          sector: '식품/수산',
+        },
+        {
+          name: '풀무원',
+          ticker: '017810.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: '두부·콩 단백질 기반 대체단백질 선도기업. 곡물가 급등 시 식물성 단백질 수요 확대 수혜.',
+          sector: '식품/대체단백질',
+        },
+        {
+          name: '카길(비상장)',
+          ticker: 'N/A',
+          market: 'NYSE',
+          relevance: 'medium',
+          reason: '글로벌 곡물 트레이딩 1위. 가격 변동성 확대 시 트레이딩 마진 극대화.',
+          sector: '농업',
+        },
+      ],
+      riskFactors: [
+        {
+          title: '라니냐 해소 시 가격 급반락',
+          description: '강수 패턴이 정상화되면 곡물 가격은 빠르게 원상 회복됩니다. 단기 테마에 올라탄 경우 출구전략이 중요합니다.',
+          severity: 'high',
+        },
+        {
+          title: '배합사료 기업 원가 부담',
+          description: '사료 제조사는 원가 급등을 즉시 반영하기 어렵습니다. 단기적으로 마진 압박이 발생할 수 있습니다.',
+          severity: 'medium',
+        },
+      ],
+      aiConfidence: 82,
+      tags: ['라니냐', '가뭄', '곡물', '사료', '식품물가', '대체단백질', '수산물'],
+    },
+    {
+      id: 'news-003',
+      title: 'EU Announces €50B Green Hydrogen Investment Package Targeting 2030 Targets',
+      titleKo: 'EU, 2030 목표 달성 위해 500억 유로 규모 그린수소 투자 패키지 발표',
+      summary: '유럽연합이 2030년 탄소중립 목표 달성을 위해 500억 유로 규모의 그린수소 인프라 투자 패키지를 공식 발표했습니다. 수전해 장치, 수소 파이프라인, 저장 인프라에 집중 투자됩니다. 이는 역대 최대 규모의 단일 에너지 전환 패키지입니다.',
+      aiAnalysis: 'EU의 그린수소 선언이 반복되지만 이번엔 다릅니다. 기존 선언들과 달리 구체적 예산 집행 타임라인과 기업별 입찰 일정이 명시됐습니다. 핵심은 수전해 장치(Electrolyzer) 수요입니다 — 국내 기업 중 수전해 스택 소재를 공급하는 곳은 손에 꼽힙니다. 동시에 수소 압축·저장 탱크 소재로 고강도 탄소섬유 수요가 급증합니다.',
+      category: '에너지',
+      publishedAt: new Date(Date.now() - 10800000).toISOString(),
+      source: 'Financial Times',
+      sourceUrl: 'https://ft.com',
+      importance: 4,
+      marketImpact: 'bullish',
+      butterflyEffects: [
+        {
+          level: 1,
+          description: 'EU 그린수소 예산 확정 → 수전해 장치(Electrolyzer) 발주 급증 → 관련 소재·부품 수요 폭발',
+          indicator: '수전해 장치 글로벌 설치 용량(GW)',
+        },
+        {
+          level: 2,
+          description: '수전해 장치 확대 → 이온교환막(PEM), 촉매(백금족 금속) 수요 급등 → 소재 공급망 긴박',
+          indicator: '백금(Platinum) 선물 가격',
+        },
+        {
+          level: 3,
+          description: '수소 저장 인프라 → 고압 탄소섬유 복합재 탱크 수요 → 효성첨단소재·도레이첨단소재 수혜',
+          indicator: '탄소섬유 평균 판매단가(ASP)',
+        },
+      ],
+      beneficiaryStocks: [
+        {
+          name: '효성첨단소재',
+          ticker: '298050.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: '수소 저장탱크용 탄소섬유 국내 1위 생산사. EU 수소 인프라 투자 시 탄소섬유 수요 직결.',
+          sector: '탄소섬유/수소',
+        },
+        {
+          name: '두산퓨얼셀',
+          ticker: '336260.KS',
+          market: 'KRX',
+          relevance: 'high',
+          reason: '연료전지(PAFC) 전문기업. EU 수소 에너지 전환 정책 직접 수혜. 해외 프로젝트 수주 기대.',
+          sector: '연료전지',
+        },
+        {
+          name: '일진하이솔루스',
+          ticker: '271940.KS',
+          market: 'KRX',
+          relevance: 'medium',
+          reason: '고압 수소 저장 탱크 전문 제조사. EU 수소 충전 인프라 구축 수혜 직결.',
+          sector: '수소 인프라',
+        },
+      ],
+      riskFactors: [
+        {
+          title: '그린수소 원가 경쟁력 미확보',
+          description: '현재 그린수소 생산단가는 천연가스 대비 3~5배 높습니다. 보조금 없이는 수익성 확보가 어렵습니다.',
+          severity: 'high',
+        },
+        {
+          title: 'EU 정책 지속성 불확실',
+          description: '정치 지형 변화(포퓰리즘 정당 약진)로 녹색 정책이 후퇴할 가능성이 있습니다.',
+          severity: 'medium',
+        },
+        {
+          title: '중국 저가 수전해 장치 덤핑',
+          description: '중국 기업들이 EU 시장에 저가 수전해 장치를 공급하며 국내 기업의 가격 경쟁력을 위협하고 있습니다.',
+          severity: 'high',
+        },
+      ],
+      aiConfidence: 79,
+      tags: ['그린수소', 'EU', '에너지전환', '탄소섬유', '연료전지', '수전해'],
+    },
+  ],
+};

@@ -1,0 +1,26 @@
+# ── Python 백엔드 ──────────────────────────
+backend/.env
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/data/reports/       # AI 분석 결과물 (로컬 전용)
+*.egg-info/
+.pytest_cache/
+
+# ── React Native / Expo ────────────────────
+mobile-app/node_modules/
+mobile-app/.expo/
+mobile-app/dist/
+mobile-app/build/
+mobile-app/.env
+mobile-app/.env.local
+
+# ── OS / IDE ──────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
+
+# ── 로그 ──────────────────────────────────
+*.log
+logs/

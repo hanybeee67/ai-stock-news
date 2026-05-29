@@ -1,0 +1,60 @@
+// 📁 app/(tabs)/_layout.tsx
+// 탭 네비게이션 레이아웃
+
+import { Tabs } from 'expo-router';
+import React from 'react';
+import { Text } from 'react-native';
+import { COLORS } from '../../constants/theme';
+
+export default function TabLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarStyle: {
+          backgroundColor: COLORS.bgCard,
+          borderTopColor: COLORS.borderCard,
+          borderTopWidth: 1,
+          paddingBottom: 8,
+          paddingTop: 8,
+          height: 70,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: '오늘 브리핑',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>📊</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="saved"
+        options={{
+          title: '저장됨',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>🔖</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: '설정',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>⚙️</Text>
+          ),
+        }}
+      />
+    </Tabs>
+  );
+}
