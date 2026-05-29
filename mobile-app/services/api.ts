@@ -8,13 +8,16 @@ import { StorageService } from './storage';
 // ─── Mock 데이터 (백엔드 없을 때 개발/데모용) ──────────────────────
 import { MOCK_DAILY_REPORT } from '../data/mockData';
 
+// ⭐️ 여기에 본인의 렌더 백엔드 주소를 적으세요! (마지막에 /는 빼주세요)
+const RENDER_BACKEND_URL = 'https://ai-stock-news-f15l.onrender.com';
+
 let _client: AxiosInstance | null = null;
 
 async function getClient(): Promise<AxiosInstance> {
   if (_client) return _client;
-  const settings = await StorageService.getSettings();
+  
   _client = axios.create({
-    baseURL: settings.apiEndpoint,
+    baseURL: RENDER_BACKEND_URL, // 무조건 렌더 주소로 강제 연결!
     timeout: 30000,
     headers: {
       'Content-Type': 'application/json',
@@ -42,17 +45,10 @@ async function getClient(): Promise<AxiosInstance> {
 
 export const ApiService = {
 
-  /** API 클라이언트 재초기화 (엔드포인트 변경 시) */
   resetClient() {
     _client = null;
   },
 
-  /**
-   * 오늘의 AI 분석 리포트 가져오기
-   * - 먼저 로컬 캐시 확인
-   * - 없거나 오래됐으면 서버에서 새로 가져옴
-   * - 서버 불가 시 Mock 데이터 반환
-   */
   async fetchDailyReport(forceRefresh = false): Promise<DailyReport> {
     const today = new Date().toISOString().split('T')[0];
 
@@ -85,7 +81,6 @@ export const ApiService = {
     return mockReport;
   },
 
-  /** 서버 헬스 체크 */
   async checkHealth(): Promise<boolean> {
     try {
       const client = await getClient();
@@ -96,7 +91,6 @@ export const ApiService = {
     }
   },
 
-  /** 수동으로 AI 분석 트리거 (서버에 분석 요청) */
   async triggerAnalysis(): Promise<boolean> {
     try {
       const client = await getClient();
