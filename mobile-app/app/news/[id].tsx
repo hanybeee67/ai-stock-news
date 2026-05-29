@@ -49,88 +49,89 @@ export default function NewsDetailScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── 상단 헤더 ── */}
-      <LinearGradient
-        colors={['#0D1240', COLORS.bgBase]}
-        style={styles.headerGradient}
-      >
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>←</Text>
-            <Text style={styles.backText}>뒤로</Text>
-          </TouchableOpacity>
-          <View style={styles.topActions}>
-            <TouchableOpacity style={styles.iconBtn} onPress={handleShare}>
-              <Text style={styles.iconBtnText}>↗</Text>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── 상단 헤더 ── */}
+        <LinearGradient
+          colors={['#0D1240', COLORS.bgBase]}
+          style={styles.headerGradient}
+        >
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+              <Text style={styles.backIcon}>←</Text>
+              <Text style={styles.backText}>뒤로</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.iconBtn, saved && styles.iconBtnActive]}
-              onPress={handleSave}
-            >
-              <Text style={styles.iconBtnText}>{saved ? '🔖' : '📌'}</Text>
-            </TouchableOpacity>
+            <View style={styles.topActions}>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleShare}>
+                <Text style={styles.iconBtnText}>↗</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, saved && styles.iconBtnActive]}
+                onPress={handleSave}
+              >
+                <Text style={styles.iconBtnText}>{saved ? '🔖' : '📌'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        {/* 카테고리 & 중요도 */}
-        <View style={styles.badgeRow}>
-          <CategoryTag category={news.category} />
-          <ImportanceBadge level={news.importance} />
-          <View style={styles.sourceBadge}>
-            <Text style={styles.sourceText}>{news.source}</Text>
+          {/* 카테고리 & 중요도 */}
+          <View style={styles.badgeRow}>
+            <CategoryTag category={news.category} />
+            <ImportanceBadge level={news.importance} />
+            <View style={styles.sourceBadge}>
+              <Text style={styles.sourceText}>{news.source}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* 제목 */}
-        <Text style={styles.title}>{news.titleKo}</Text>
-        <Text style={styles.originalTitle}>{news.title}</Text>
+          {/* 제목 */}
+          <Text style={styles.title}>{news.titleKo}</Text>
+          <Text style={styles.originalTitle}>{news.title}</Text>
 
-        {/* 시간 + AI 신뢰도 */}
-        <View style={styles.metaRow}>
-          <Text style={styles.metaText}>
-            {new Date(news.publishedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
-          </Text>
-          <View style={styles.confidencePill}>
-            <Text style={styles.confidenceText}>🤖 AI 신뢰도 {news.aiConfidence}%</Text>
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* ── 3줄 요약 박스 ── */}
-      <View style={styles.summaryBox}>
-        <Text style={styles.summaryLabel}>📝 3줄 요약 (초보자용)</Text>
-        {news.summary.split('.').filter(s => s.trim()).slice(0, 3).map((sentence, i) => (
-          <View key={i} style={styles.summaryRow}>
-            <Text style={styles.summaryBullet}>{['1️⃣', '2️⃣', '3️⃣'][i]}</Text>
-            <Text style={styles.summaryText}>{sentence.trim()}.</Text>
-          </View>
-        ))}
-        <TouchableOpacity style={styles.readMoreBtn} onPress={() => Linking.openURL(news.sourceUrl)}>
-          <Text style={styles.readMoreText}>원문 읽기 →</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── 탭 메뉴 ── */}
-      <View style={styles.tabBar}>
-        {[
-          { key: 'analysis', label: '🔍 AI 분석', id: 'tab-analysis' },
-          { key: 'stocks', label: '📈 수혜주', id: 'tab-stocks' },
-          { key: 'risks', label: '⚠️ 리스크', id: 'tab-risks' },
-        ].map(tab => (
-          <TouchableOpacity
-            key={tab.key}
-            testID={tab.id}
-            style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
-            onPress={() => setActiveTab(tab.key as any)}
-          >
-            <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>
-              {tab.label}
+          {/* 시간 + AI 신뢰도 */}
+          <View style={styles.metaRow}>
+            <Text style={styles.metaText}>
+              {new Date(news.publishedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <View style={styles.confidencePill}>
+              <Text style={styles.confidenceText}>🤖 AI 신뢰도 {news.aiConfidence}%</Text>
+            </View>
+          </View>
+        </LinearGradient>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ── 3줄 요약 박스 ── */}
+        <View style={styles.summaryBox}>
+          <Text style={styles.summaryLabel}>📝 3줄 요약 (초보자용)</Text>
+          {news.summary.split('.').filter(s => s.trim()).slice(0, 3).map((sentence, i) => (
+            <View key={i} style={styles.summaryRow}>
+              <Text style={styles.summaryBullet}>{['1️⃣', '2️⃣', '3️⃣'][i]}</Text>
+              <Text style={styles.summaryText}>{sentence.trim()}.</Text>
+            </View>
+          ))}
+          <TouchableOpacity style={styles.readMoreBtn} onPress={() => Linking.openURL(news.sourceUrl)}>
+            <Text style={styles.readMoreText}>원문 읽기 →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── 탭 메뉴 ── */}
+        <View style={styles.tabBar}>
+          {[
+            { key: 'analysis', label: '🔍 AI 분석', id: 'tab-analysis' },
+            { key: 'stocks', label: '📈 수혜주', id: 'tab-stocks' },
+            { key: 'risks', label: '⚠️ 리스크', id: 'tab-risks' },
+          ].map(tab => (
+            <TouchableOpacity
+              key={tab.key}
+              testID={tab.id}
+              style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab.key as any)}
+            >
+              <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.scrollContent}>
 
         {/* ── AI 분석 탭 ── */}
         {activeTab === 'analysis' && (
@@ -184,6 +185,7 @@ export default function NewsDetailScreen() {
         )}
 
         <View style={{ height: SPACING.xxxl }} />
+        </View>
       </ScrollView>
     </View>
   );
