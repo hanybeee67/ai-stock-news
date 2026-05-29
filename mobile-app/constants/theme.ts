@@ -61,15 +61,15 @@ export const COLORS = {
 
 export const FONTS = {
   // Font sizes
-  xs: 10,
-  sm: 12,
-  md: 14,
-  base: 15,
-  lg: 17,
-  xl: 20,
-  xxl: 24,
-  xxxl: 28,
-  display: 34,
+  xs: 12,
+  sm: 14,
+  md: 16,
+  base: 18,
+  lg: 20,
+  xl: 23,
+  xxl: 27,
+  xxxl: 32,
+  display: 38,
 
   // Font weights (as strings for React Native)
   light: '300' as const,

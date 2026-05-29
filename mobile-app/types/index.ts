@@ -8,6 +8,7 @@ export interface BeneficiaryStock {
   relevance: 'high' | 'medium' | 'low';       // 연관성 등급
   reason: string;         // 핵심 수혜 이유 (2~3줄)
   sector: string;         // 섹터 분류
+  recentTrend?: string;   // 최근 주가 동향 (예: 현재가 $120 (최근 5일 +3.2%))
 }
 
 export interface RiskFactor {

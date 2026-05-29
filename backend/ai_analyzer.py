@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 from loguru import logger
 import anthropic
+import yfinance as yf
 
 # ─── Claude 시스템 프롬프트 ────────────────────────────────────────────
 SYSTEM_PROMPT = """# 당신은 누구인가
@@ -239,6 +240,26 @@ class AIAnalyzer:
                 clean_output = "\n".join(lines[1:-1])
 
             report = json.loads(clean_output)
+
+            # 주가 동향 추가 (yfinance 활용)
+            for news in report.get("topNews", []):
+                for stock in news.get("beneficiaryStocks", []):
+                    ticker = stock.get("ticker", "")
+                    if ticker:
+                        try:
+                            yf_ticker = yf.Ticker(ticker)
+                            hist = yf_ticker.history(period="5d")
+                            if not hist.empty and len(hist) >= 2:
+                                current_price = hist['Close'].iloc[-1]
+                                start_price = hist['Close'].iloc[0]
+                                pct_change = ((current_price - start_price) / start_price) * 100
+                                sign = "+" if pct_change > 0 else ""
+                                # 통화 기호 추정 (간단히 한국과 미국 분리)
+                                currency = "원" if ".KS" in ticker or ".KQ" in ticker else "$"
+                                price_str = f"{int(current_price):,}{currency}" if currency == "원" else f"{currency}{current_price:.2f}"
+                                stock["recentTrend"] = f"현재 {price_str} (최근 5일 {sign}{pct_change:.1f}%)"
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch trend for {ticker}: {e}")
 
             # 필수 필드 보완
             report["generatedAt"] = datetime.now(timezone.utc).isoformat()

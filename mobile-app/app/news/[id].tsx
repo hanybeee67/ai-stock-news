@@ -244,6 +244,11 @@ function StockCard({ stock }: { stock: BeneficiaryStock }) {
       </View>
       <Text style={styles.stockSector}>🏭 {stock.sector}</Text>
       <Text style={styles.stockReason}>{stock.reason}</Text>
+      {stock.recentTrend && (
+        <View style={styles.trendChip}>
+          <Text style={styles.trendText}>📊 {stock.recentTrend}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -549,6 +554,19 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     color: COLORS.textSecondary,
     lineHeight: 18,
+  },
+  trendChip: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.bgSurface,
+    alignSelf: 'flex-start',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+  },
+  trendText: {
+    fontSize: 11,
+    color: COLORS.textPrimary,
+    fontWeight: FONTS.medium,
   },
 
   // Risk Card
