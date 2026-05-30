@@ -98,8 +98,10 @@ export default function HistoryScreen() {
     const month = d.getMonth() + 1;
     const day = d.getDate();
     const weekday = weekdays[d.getDay()];
-    const today = new Date().toISOString().split('T')[0];
-    const isToday = dateStr === today;
+    // ✅ KST(UTC+9) 기준 오늘 날짜
+    const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const todayKST = nowKST.toISOString().split('T')[0];
+    const isToday = dateStr === todayKST;
     return {
       label: `${month}/${day}`,
       weekday: isToday ? '오늘' : `${weekday}요일`,

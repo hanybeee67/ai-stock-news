@@ -207,7 +207,7 @@ class AIAnalyzer:
 
         # ✅ AsyncAnthropic 사용 — event loop 블로킹 방지
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
-        self.model = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+        self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
         self.top_n = int(os.getenv("TOP_NEWS_COUNT", "5"))
         self.max_retries = 2
 
