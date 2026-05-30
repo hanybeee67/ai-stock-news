@@ -31,6 +31,7 @@ from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from loguru import logger
 import yfinance as yf
+import requests
 
 from news_collector import NewsCollector
 from ai_analyzer import AIAnalyzer
@@ -280,14 +281,29 @@ async def get_stock_detail(ticker: str):
     """특정 종목의 상세 정보 및 기간별 수익률 반환"""
     try:
         def fetch_data():
-            t = yf.Ticker(ticker)
-            info = t.info
+            # yfinance Rate Limit(429 에러) 방지를 위한 커스텀 세션(User-Agent) 적용
+            session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            
+            t = yf.Ticker(ticker, session=session)
+            try:
+                info = t.info
+            except Exception as info_err:
+                logger.warning(f"yfinance info fetch error for {ticker}: {info_err}")
+                info = {}
             
             # yfinance는 잘못된 티커일 때 info가 비어있거나, regularMarketPrice가 없을 수 있음
             if not info or "symbol" not in info:
-                return None
+                # info가 없어도 history로 데이터를 살려보려는 시도
+                pass
                 
-            history_data = t.history(period="1y")
+            try:
+                history_data = t.history(period="1y")
+            except Exception as hist_err:
+                logger.warning(f"yfinance history fetch error for {ticker}: {hist_err}")
+                return None
             if history_data.empty:
                 return None
                 
