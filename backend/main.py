@@ -314,7 +314,7 @@ async def get_stock_detail(ticker: str):
                 "industry": info.get("industry", "N/A"),
                 "summary": info.get("longBusinessSummary", "제공된 기업 정보가 없습니다."),
                 "marketCap": info.get("marketCap", 0),
-                "peRatio": info.get("trailingPE", None),
+                "peRatio": info.get("trailingPE") or info.get("forwardPE") or None,
                 "currency": info.get("currency", "USD"),
                 "currentPrice": current_price,
                 "returns": returns
@@ -323,6 +323,19 @@ async def get_stock_detail(ticker: str):
         data = await asyncio.to_thread(fetch_data)
         if not data:
             raise HTTPException(status_code=404, detail="종목 데이터를 찾을 수 없습니다.")
+            
+        # 영문 기업 개요 한국어 번역 (빠르고 저렴한 Claude Haiku 모델 사용)
+        if analyzer and analyzer.client and data.get("summary") and data["summary"] != "제공된 기업 정보가 없습니다.":
+            try:
+                prompt = f"다음 해외 기업의 비즈니스 개요를 한국어 주식/경제 용어에 맞게 자연스럽게 번역해줘. 핵심만 3~4문장으로 요약 번역해줘:\n\n{data['summary']}"
+                response = await analyzer.client.messages.create(
+                    model="claude-3-haiku-20240307", 
+                    max_tokens=400,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                data["summary"] = response.content[0].text.strip()
+            except Exception as e:
+                logger.warning(f"기업 개요 번역 실패: {e}")
             
         return JSONResponse(content={
             "success": True,
