@@ -355,7 +355,7 @@ async def get_stock_detail(ticker: str):
 
                 if prompt:
                     response = await analyzer.client.messages.create(
-                        model="claude-3-haiku-20240307", 
+                        model=analyzer.model, 
                         max_tokens=400,
                         messages=[{"role": "user", "content": prompt}]
                     )
@@ -375,7 +375,6 @@ async def get_stock_detail(ticker: str):
                         data["summary"] = content
             except Exception as e:
                 logger.warning(f"기업 개요 번역/생성 실패: {e}")
-                data["summary"] += f" [번역 실패: {str(e)}]"
             
         return JSONResponse(content={
             "success": True,
