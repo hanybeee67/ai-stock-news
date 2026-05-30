@@ -1,5 +1,5 @@
 // 📁 app/(tabs)/_layout.tsx
-// 탭 네비게이션 레이아웃
+// 탭 네비게이션 레이아웃 — 히스토리 탭 추가 (v2.0)
 
 import { Tabs } from 'expo-router';
 import React from 'react';
@@ -32,8 +32,17 @@ export default function TabLayout() {
         name="index"
         options={{
           title: '오늘 브리핑',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>📊</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: '히스토리',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>📅</Text>
           ),
         }}
       />
@@ -41,7 +50,7 @@ export default function TabLayout() {
         name="saved"
         options={{
           title: '저장됨',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>🔖</Text>
           ),
         }}
@@ -50,7 +59,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: '설정',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>⚙️</Text>
           ),
         }}

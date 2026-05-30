@@ -8,13 +8,19 @@ Claude AI 뉴스 심층 분석 엔진
 2. [나비효과 분석] 1차→2차→3차 파급효과 추론
 3. [수혜주 매칭] 논리적 근거 + 관련 종목 도출
 4. [리스크 쌍 도출] 진입 시 주의사항 반드시 병기
+
+변경사항 (v2.0):
+- AsyncAnthropic 으로 교체 → event loop 블로킹 제거
+- JSON 파싱 3단계 내성 강화 (정규식 재추출 + fallback)
+- 분석 재시도 로직 추가 (최대 2회)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
 import json
 import os
+import re
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 import anthropic
 import yfinance as yf
@@ -140,20 +146,70 @@ def build_analysis_prompt(news_items: List[Dict]) -> str:
 }}
 
 선별 기준: 위 원칙에 따라 가장 중요한 뉴스 3~5개만 선별하여 topNews 배열에 포함하세요.
-반드시 유효한 JSON만 출력하세요."""
+반드시 유효한 JSON만 출력하세요. JSON 앞뒤에 어떠한 텍스트도 붙이지 마세요."""
+
+
+def _extract_json_robust(raw_output: str) -> Optional[dict]:
+    """
+    Claude 응답에서 JSON을 강건하게 추출하는 3단계 시도.
+
+    1단계: 마크다운 코드블록 제거 후 직접 파싱
+    2단계: 정규식으로 { ... } 블록 추출 후 파싱
+    3단계: 중첩된 JSON 구조 브루트포스 탐색
+    """
+    # ── 1단계: 코드블록 벗기기 ──
+    clean = raw_output.strip()
+    if clean.startswith("```"):
+        lines = clean.split("\n")
+        # 첫 줄(```json 또는 ```) 과 마지막 줄(```) 제거
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        clean = "\n".join(inner).strip()
+
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        pass
+
+    # ── 2단계: 정규식으로 JSON 오브젝트 블록 추출 ──
+    json_pattern = re.compile(r'\{[\s\S]*\}', re.DOTALL)
+    match = json_pattern.search(raw_output)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    # ── 3단계: 중괄호 균형 맞춰 추출 ──
+    start_idx = raw_output.find('{')
+    if start_idx != -1:
+        depth = 0
+        for i, ch in enumerate(raw_output[start_idx:], start=start_idx):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(raw_output[start_idx:i+1])
+                    except json.JSONDecodeError:
+                        break
+
+    return None
 
 
 class AIAnalyzer:
-    """Claude API 기반 뉴스 심층 분석 엔진"""
+    """Claude API 기반 뉴스 심층 분석 엔진 (비동기 v2.0)"""
 
     def __init__(self):
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("⛔ ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다!")
 
-        self.client = anthropic.Anthropic(api_key=api_key)
+        # ✅ AsyncAnthropic 사용 — event loop 블로킹 방지
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
         self.top_n = int(os.getenv("TOP_NEWS_COUNT", "5"))
+        self.max_retries = 2
 
     async def analyze(self, news_items: List[Dict]) -> Dict[str, Any]:
         """
@@ -172,76 +228,92 @@ class AIAnalyzer:
         start = datetime.now()
 
         prompt = build_analysis_prompt(news_items)
+        raw_output = None
 
-        try:
-            # Claude API 호출 (동기 방식)
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=8192,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                temperature=0.3,  # 낮은 temperature = 더 일관되고 사실적인 출력
-            )
+        # ── 재시도 루프 ──
+        last_error = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                logger.info(f"🔄 Claude API 호출 (시도 {attempt}/{self.max_retries})")
+                # ✅ await 비동기 호출
+                message = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=8192,
+                    system=SYSTEM_PROMPT,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        }
+                    ],
+                    temperature=0.3,  # 낮은 temperature = 더 일관되고 사실적인 출력
+                )
 
-            raw_output = message.content[0].text
-            elapsed = (datetime.now() - start).total_seconds()
+                raw_output = message.content[0].text
+                elapsed = (datetime.now() - start).total_seconds()
+                logger.info(f"✅ Claude 응답 완료 ({elapsed:.1f}초, {message.usage.output_tokens} 토큰)")
 
-            logger.info(f"✅ Claude 응답 완료 ({elapsed:.1f}초, {message.usage.output_tokens} 토큰)")
+                # ── 강건한 JSON 파싱 ──
+                report = _extract_json_robust(raw_output)
+                if report is None:
+                    raise RuntimeError("JSON 추출 실패: 3단계 파싱 모두 실패")
 
-            # JSON 파싱
-            # Claude가 마크다운 코드블록으로 감쌀 경우 제거
-            clean_output = raw_output.strip()
-            if clean_output.startswith("```"):
-                lines = clean_output.split("\n")
-                # 첫 줄(```json)과 마지막 줄(```) 제거
-                clean_output = "\n".join(lines[1:-1])
+                break  # 성공 시 루프 탈출
 
-            report = json.loads(clean_output)
+            except (json.JSONDecodeError, RuntimeError) as e:
+                last_error = e
+                logger.warning(f"⚠ 시도 {attempt} 파싱 실패: {e}")
+                if attempt < self.max_retries:
+                    logger.info("🔁 재시도 중...")
+                    continue
+                else:
+                    logger.error(f"❌ 최대 재시도 초과. 원본 출력 (앞 500자):\n{raw_output[:500] if raw_output else 'None'}")
+                    raise RuntimeError(f"Claude 응답 파싱 최종 실패: {e}")
 
-            # 주가 동향 추가 (yfinance 활용)
-            for news in report.get("topNews", []):
-                for stock in news.get("beneficiaryStocks", []):
-                    ticker = stock.get("ticker", "")
-                    if ticker:
-                        try:
-                            yf_ticker = yf.Ticker(ticker)
-                            hist = yf_ticker.history(period="5d")
-                            if not hist.empty and len(hist) >= 2:
-                                current_price = hist['Close'].iloc[-1]
-                                start_price = hist['Close'].iloc[0]
-                                pct_change = ((current_price - start_price) / start_price) * 100
-                                sign = "+" if pct_change > 0 else ""
-                                # 통화 기호 추정 (간단히 한국과 미국 분리)
-                                currency = "원" if ".KS" in ticker or ".KQ" in ticker else "$"
-                                price_str = f"{int(current_price):,}{currency}" if currency == "원" else f"{currency}{current_price:.2f}"
-                                stock["recentTrend"] = f"현재 {price_str} (최근 5일 {sign}{pct_change:.1f}%)"
-                        except Exception as e:
-                            logger.warning(f"Failed to fetch trend for {ticker}: {e}")
+            except anthropic.APIStatusError as e:
+                logger.error(f"❌ Claude API 오류 {e.status_code}: {e.message}")
+                raise RuntimeError(f"Claude API 오류: {e.message}")
 
-            # 필수 필드 보완
-            report["generatedAt"] = datetime.now(timezone.utc).isoformat()
-            report["date"] = datetime.now().strftime("%Y-%m-%d")
+            except anthropic.APIConnectionError as e:
+                logger.error(f"❌ Claude API 연결 실패: {e}")
+                raise RuntimeError("Claude API에 연결할 수 없습니다. 인터넷 연결을 확인하세요.")
 
-            logger.info(f"📊 분석 완료: {len(report.get('topNews', []))}개 뉴스 선별")
-            return report
+        # ── 주가 동향 추가 (yfinance) ──
+        await self._enrich_stock_trends(report)
 
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON 파싱 실패: {e}")
-            logger.debug(f"Claude 원본 출력:\n{raw_output[:500]}")
-            raise RuntimeError(f"Claude 응답 파싱 실패: {e}")
+        # ── 필수 필드 보완 ──
+        report["generatedAt"] = datetime.now(timezone.utc).isoformat()
+        report["date"] = datetime.now().strftime("%Y-%m-%d")
 
-        except anthropic.APIStatusError as e:
-            logger.error(f"❌ Claude API 오류 {e.status_code}: {e.message}")
-            raise RuntimeError(f"Claude API 오류: {e.message}")
+        logger.info(f"📊 분석 완료: {len(report.get('topNews', []))}개 뉴스 선별")
+        return report
 
-        except anthropic.APIConnectionError as e:
-            logger.error(f"❌ Claude API 연결 실패: {e}")
-            raise RuntimeError("Claude API에 연결할 수 없습니다. 인터넷 연결을 확인하세요.")
+    async def _enrich_stock_trends(self, report: dict) -> None:
+        """수혜주에 최근 주가 동향 추가 (yfinance, 실패해도 무시)"""
+        for news in report.get("topNews", []):
+            for stock in news.get("beneficiaryStocks", []):
+                ticker = stock.get("ticker", "")
+                if not ticker:
+                    continue
+                try:
+                    yf_ticker = yf.Ticker(ticker)
+                    hist = yf_ticker.history(period="5d")
+                    if not hist.empty and len(hist) >= 2:
+                        current_price = hist['Close'].iloc[-1]
+                        start_price = hist['Close'].iloc[0]
+                        pct_change = ((current_price - start_price) / start_price) * 100
+                        sign = "+" if pct_change > 0 else ""
+                        currency = "원" if (".KS" in ticker or ".KQ" in ticker) else "$"
+                        if currency == "원":
+                            price_str = f"{int(current_price):,}원"
+                        else:
+                            price_str = f"${current_price:.2f}"
+                        stock["recentTrend"] = f"현재 {price_str} (최근 5일 {sign}{pct_change:.1f}%)"
+                        # 등락 방향도 저장
+                        stock["trendDirection"] = "up" if pct_change > 0 else "down" if pct_change < 0 else "flat"
+                        stock["trendPercent"] = round(pct_change, 2)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch trend for {ticker}: {e}")
 
 
 # ─── 독립 실행 테스트 ──────────────────────────────────────────────
@@ -259,7 +331,7 @@ if __name__ == "__main__":
             "url": "https://reuters.com/test",
             "source": "Reuters",
             "category_hint": "기술",
-            "published_at": "2026-05-29",
+            "published_at": "2026-05-30",
             "importance_score": 9,
         },
         {
@@ -269,7 +341,7 @@ if __name__ == "__main__":
             "url": "https://bloomberg.com/test",
             "source": "Bloomberg",
             "category_hint": "원자재",
-            "published_at": "2026-05-29",
+            "published_at": "2026-05-30",
             "importance_score": 7,
         },
     ]

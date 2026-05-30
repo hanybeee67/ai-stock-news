@@ -2,7 +2,7 @@
   "expo": {
     "name": "AI 증시 브리핑",
     "slug": "ai-stock-news",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -39,6 +39,12 @@
       ]
     ],
     "scheme": "aistocknews",
-    "backgroundColor": "#0A0E1A"
+    "backgroundColor": "#0A0E1A",
+    "extra": {
+      "apiUrl": "https://ai-stock-news-f15l.onrender.com",
+      "eas": {
+        "projectId": "ai-stock-news"
+      }
+    }
   }
 }

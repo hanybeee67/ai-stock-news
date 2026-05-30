@@ -1,23 +1,27 @@
 // 📁 services/api.ts
 // 백엔드 API 연동 서비스 (Python FastAPI 서버 통신)
+// v2.0: 환경변수화, 신규 엔드포인트 추가, 폴링 지원
 
 import axios, { AxiosInstance } from 'axios';
+import Constants from 'expo-constants';
 import { ApiResponse, DailyReport, AppSettings } from '../types';
 import { StorageService } from './storage';
 
 // ─── Mock 데이터 (백엔드 없을 때 개발/데모용) ──────────────────────
 import { MOCK_DAILY_REPORT } from '../data/mockData';
 
-// ⭐️ 여기에 본인의 렌더 백엔드 주소를 적으세요! (마지막에 /는 빼주세요)
-const RENDER_BACKEND_URL = 'https://ai-stock-news-f15l.onrender.com';
+// ✅ 환경변수에서 URL 가져오기 (app.json extra.apiUrl → 하드코딩 폴백)
+const BACKEND_URL: string =
+  (Constants.expoConfig?.extra?.apiUrl as string) ||
+  'https://ai-stock-news-f15l.onrender.com';
 
 let _client: AxiosInstance | null = null;
 
 async function getClient(): Promise<AxiosInstance> {
   if (_client) return _client;
-  
+
   _client = axios.create({
-    baseURL: RENDER_BACKEND_URL, // 무조건 렌더 주소로 강제 연결!
+    baseURL: BACKEND_URL,
     timeout: 30000,
     headers: {
       'Content-Type': 'application/json',
@@ -27,7 +31,7 @@ async function getClient(): Promise<AxiosInstance> {
 
   // 요청 인터셉터 - 로깅
   _client.interceptors.request.use(req => {
-    console.log(`[API] → ${req.method?.toUpperCase()} ${req.url}`);
+    console.log(`[API] → ${req.method?.toUpperCase()} ${req.baseURL}${req.url}`);
     return req;
   });
 
@@ -43,16 +47,48 @@ async function getClient(): Promise<AxiosInstance> {
   return _client;
 }
 
+// ─── 서버 상태 타입 ─────────────────────────────────────────────────
+export interface ServerStatus {
+  serverVersion: string;
+  analyzerReady: boolean;
+  isAnalyzing: boolean;
+  analysisProgress: string;
+  analysisStartedAt: string | null;
+  lastError: string | null;
+  todayReportReady: boolean;
+  todayReportGeneratedAt: string | null;
+  nextScheduledAt: string | null;
+  availableReportDates: string[];
+  scheduledJobCount: number;
+}
+
+// ─── 히스토리 아이템 타입 ─────────────────────────────────────────────
+export interface HistoryItem {
+  date: string;
+  headline: string;
+  marketMood: string;
+  newsCount: number;
+  generatedAt: string;
+  avgConfidence: number;
+  topCategories: string[];
+  dominantImpact: 'bullish' | 'bearish' | 'neutral';
+}
+
 export const ApiService = {
 
   resetClient() {
     _client = null;
   },
 
+  getBackendUrl(): string {
+    return BACKEND_URL;
+  },
+
+  // ─── 오늘 리포트 가져오기 ──────────────────────────────────────────
   async fetchDailyReport(forceRefresh = false): Promise<DailyReport> {
     const today = new Date().toISOString().split('T')[0];
 
-    // 1. 캐시 확인
+    // 1. 캐시 확인 (강제 갱신이 아닐 때만)
     if (!forceRefresh) {
       const cached = await StorageService.getTodayReport();
       if (cached) {
@@ -71,7 +107,12 @@ export const ApiService = {
         console.log('[API] ✓ 서버에서 새 리포트 수신:', report.date);
         return report;
       }
-    } catch (err) {
+    } catch (err: any) {
+      // 202: 분석 진행 중 (특별 처리)
+      if (err?.response?.status === 202) {
+        console.log('[API] ⏳ 분석 진행 중...');
+        throw new Error('analyzing');
+      }
       console.warn('[API] ⚠ 서버 연결 실패, Mock 데이터 사용');
     }
 
@@ -81,6 +122,28 @@ export const ApiService = {
     return mockReport;
   },
 
+  // ─── 특정 날짜 리포트 ─────────────────────────────────────────────
+  async fetchReportByDate(date: string): Promise<DailyReport | null> {
+    // 1. 로컬 캐시 확인
+    const cached = await StorageService.getReportByDate(date);
+    if (cached) return cached;
+
+    // 2. 서버에서 가져오기
+    try {
+      const client = await getClient();
+      const res = await client.get<ApiResponse<DailyReport>>(`/api/daily-report/${date}`);
+      if (res.data.success && res.data.data) {
+        const report = res.data.data;
+        await StorageService.saveDailyReport(report);
+        return report;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  },
+
+  // ─── 서버 헬스 체크 ──────────────────────────────────────────────
   async checkHealth(): Promise<boolean> {
     try {
       const client = await getClient();
@@ -91,13 +154,63 @@ export const ApiService = {
     }
   },
 
-  async triggerAnalysis(): Promise<boolean> {
+  // ─── 상세 서버 상태 ──────────────────────────────────────────────
+  async fetchStatus(): Promise<ServerStatus | null> {
     try {
       const client = await getClient();
-      await client.post('/api/trigger-analysis');
-      return true;
+      const res = await client.get<ApiResponse<ServerStatus>>('/api/status', { timeout: 8000 });
+      return res.data.success ? res.data.data : null;
     } catch {
-      return false;
+      return null;
     }
+  },
+
+  // ─── 수동 분석 트리거 ─────────────────────────────────────────────
+  async triggerAnalysis(): Promise<{ success: boolean; message: string }> {
+    try {
+      const client = await getClient();
+      const res = await client.post('/api/trigger-analysis');
+      return res.data;
+    } catch {
+      return { success: false, message: '서버 연결 실패' };
+    }
+  },
+
+  // ─── 히스토리 목록 ────────────────────────────────────────────────
+  async fetchHistory(): Promise<HistoryItem[]> {
+    try {
+      const client = await getClient();
+      const res = await client.get<ApiResponse<HistoryItem[]>>('/api/reports/history');
+      if (res.data.success && res.data.data) {
+        return res.data.data;
+      }
+    } catch {
+      console.warn('[API] ⚠ 히스토리 조회 실패');
+    }
+    return [];
+  },
+
+  // ─── 분석 완료까지 폴링 ──────────────────────────────────────────
+  async pollUntilReady(
+    onProgress?: (msg: string) => void,
+    maxWaitSeconds = 180,
+    intervalSeconds = 5,
+  ): Promise<DailyReport | null> {
+    const start = Date.now();
+    while ((Date.now() - start) / 1000 < maxWaitSeconds) {
+      try {
+        const status = await ApiService.fetchStatus();
+        if (status?.analysisProgress) {
+          onProgress?.(status.analysisProgress);
+        }
+        if (status?.todayReportReady) {
+          return await ApiService.fetchDailyReport(true);
+        }
+      } catch {
+        // 폴링 중 오류는 무시하고 계속
+      }
+      await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+    }
+    return null;
   },
 };
