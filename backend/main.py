@@ -340,18 +340,41 @@ async def get_stock_detail(ticker: str):
         if not data:
             raise HTTPException(status_code=404, detail="종목 데이터를 찾을 수 없습니다.")
             
-        # 영문 기업 개요 한국어 번역 (빠르고 저렴한 Claude Haiku 모델 사용)
-        if analyzer and analyzer.client and data.get("summary") and data["summary"] != "제공된 기업 정보가 없습니다.":
+        # 영문 기업 개요 한국어 번역 및 누락된 정보 보완 (Claude Haiku 모델 사용)
+        if analyzer and analyzer.client:
             try:
-                prompt = f"다음 해외 기업의 비즈니스 개요를 한국어 주식/경제 용어에 맞게 자연스럽게 번역해줘. 핵심만 3~4문장으로 요약 번역해줘:\n\n{data['summary']}"
-                response = await analyzer.client.messages.create(
-                    model="claude-3-haiku-20240307", 
-                    max_tokens=400,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                data["summary"] = response.content[0].text.strip()
+                # yfinance가 차단되어 info가 없으면(이름이 티커와 같음) Claude가 정보 생성
+                is_missing_info = (data["name"] == ticker or data["summary"] == "제공된 기업 정보가 없습니다.")
+                
+                if is_missing_info:
+                    prompt = f"주식 티커 '{ticker}'에 대한 기업 정보를 JSON 형식으로만 응답해줘. 개요는 한국어로 주식/경제 용어에 맞게 3~4문장으로 요약해줘.\n형식: {{\"name\": \"종목명\", \"sector\": \"섹터\", \"industry\": \"산업군\", \"summary\": \"개요 내용\"}}"
+                elif data.get("summary") and data["summary"] != "제공된 기업 정보가 없습니다.":
+                    prompt = f"다음 해외 기업의 비즈니스 개요를 한국어 주식/경제 용어에 맞게 자연스럽게 번역해줘. 핵심만 3~4문장으로 요약 번역해줘. (부연설명 없이 번역 결과만 출력):\n\n{data['summary']}"
+                else:
+                    prompt = None
+
+                if prompt:
+                    response = await analyzer.client.messages.create(
+                        model="claude-3-haiku-20240307", 
+                        max_tokens=400,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    content = response.content[0].text.strip()
+                    
+                    if is_missing_info:
+                        import re
+                        import json
+                        match = re.search(r'\{.*\}', content, re.DOTALL)
+                        if match:
+                            parsed = json.loads(match.group(0))
+                            data["name"] = parsed.get("name", data["name"])
+                            data["sector"] = parsed.get("sector", data["sector"])
+                            data["industry"] = parsed.get("industry", data["industry"])
+                            data["summary"] = parsed.get("summary", data["summary"])
+                    else:
+                        data["summary"] = content
             except Exception as e:
-                logger.warning(f"기업 개요 번역 실패: {e}")
+                logger.warning(f"기업 개요 번역/생성 실패: {e}")
             
         return JSONResponse(content={
             "success": True,
