@@ -62,6 +62,24 @@ export interface ServerStatus {
   scheduledJobCount: number;
 }
 
+export interface StockDetail {
+  ticker: string;
+  name: string;
+  sector: string;
+  industry: string;
+  summary: string;
+  marketCap: number;
+  peRatio: number | null;
+  currency: string;
+  currentPrice: number;
+  returns: {
+    '1d': number;
+    '1w': number;
+    '1m': number;
+    '1y': number;
+  };
+}
+
 // ─── 히스토리 아이템 타입 ─────────────────────────────────────────────
 export interface HistoryItem {
   date: string;
@@ -139,6 +157,20 @@ export const ApiService = {
       }
     } catch {
       return null;
+    }
+    return null;
+  },
+
+  // ─── 특정 종목 상세정보 ─────────────────────────────────────────────
+  async fetchStockDetail(ticker: string): Promise<StockDetail | null> {
+    try {
+      const client = await getClient();
+      const res = await client.get<ApiResponse<StockDetail>>(`/api/stock/${ticker}`);
+      if (res.data.success && res.data.data) {
+        return res.data.data;
+      }
+    } catch (err) {
+      console.warn(`[API] ⚠ 종목 상세정보 조회 실패 (${ticker}):`, err);
     }
     return null;
   },

@@ -188,9 +188,13 @@ export default function NewsDetailScreen() {
           {activeTab === 'stocks' && (
             <View style={styles.tabContent}>
               <Text style={styles.sectionTitle}>📈 관련 수혜주 맵</Text>
-              <Text style={styles.sectionSubtitle}>AI가 연관성과 근거를 분석한 종목</Text>
+              <Text style={styles.sectionSubtitle}>AI가 연관성과 근거를 분석한 종목 (클릭하여 상세 정보 보기)</Text>
               {news.beneficiaryStocks?.map((stock, i) => (
-                <StockCard key={i} stock={stock} />
+                <StockCard 
+                  key={i} 
+                  stock={stock} 
+                  onPress={(ticker) => router.push(`/stock/${ticker}`)}
+                />
               ))}
             </View>
           )}
@@ -252,7 +256,7 @@ function ButterflyEffectCard({ effect, isLast }: { effect: ButterflyEffect; isLa
 }
 
 // ── 수혜주 카드 ──────────────────────────────────────────────────────
-function StockCard({ stock }: { stock: BeneficiaryStock }) {
+function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (ticker: string) => void }) {
   const relevanceConfig = {
     high:   { label: '연관 높음', color: COLORS.accentGreen, bg: COLORS.accentGreenDim },
     medium: { label: '연관 보통', color: COLORS.accentGold,  bg: COLORS.accentGoldDim },
@@ -267,7 +271,11 @@ function StockCard({ stock }: { stock: BeneficiaryStock }) {
     : COLORS.accentGold;
 
   return (
-    <View style={styles.stockCard}>
+    <TouchableOpacity 
+      style={styles.stockCard} 
+      activeOpacity={0.7}
+      onPress={() => onPress(stock.ticker)}
+    >
       <View style={styles.stockCardHeader}>
         <View style={styles.stockNameRow}>
           <Text style={styles.stockFlag}>{marketFlags[stock.market] ?? '🌐'}</Text>
@@ -289,7 +297,7 @@ function StockCard({ stock }: { stock: BeneficiaryStock }) {
           </Text>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 

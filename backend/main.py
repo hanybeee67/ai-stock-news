@@ -30,6 +30,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from loguru import logger
+import yfinance as yf
 
 from news_collector import NewsCollector
 from ai_analyzer import AIAnalyzer
@@ -272,6 +273,68 @@ async def get_report_history():
         "data": reports,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+
+
+@app.get("/api/stock/{ticker}")
+async def get_stock_detail(ticker: str):
+    """특정 종목의 상세 정보 및 기간별 수익률 반환"""
+    try:
+        def fetch_data():
+            t = yf.Ticker(ticker)
+            info = t.info
+            
+            # yfinance는 잘못된 티커일 때 info가 비어있거나, regularMarketPrice가 없을 수 있음
+            if not info or "symbol" not in info:
+                return None
+                
+            history_data = t.history(period="1y")
+            if history_data.empty:
+                return None
+                
+            current_price = history_data['Close'].iloc[-1]
+            
+            def get_return(days_ago):
+                if len(history_data) <= days_ago:
+                    start_price = history_data['Close'].iloc[0]
+                else:
+                    start_price = history_data['Close'].iloc[-(days_ago+1)]
+                return ((current_price - start_price) / start_price) * 100
+                
+            returns = {
+                "1d": get_return(1),
+                "1w": get_return(5),
+                "1m": get_return(21),
+                "1y": get_return(252)
+            }
+            
+            return {
+                "ticker": ticker,
+                "name": info.get("shortName") or info.get("longName") or ticker,
+                "sector": info.get("sector", "N/A"),
+                "industry": info.get("industry", "N/A"),
+                "summary": info.get("longBusinessSummary", "제공된 기업 정보가 없습니다."),
+                "marketCap": info.get("marketCap", 0),
+                "peRatio": info.get("trailingPE", None),
+                "currency": info.get("currency", "USD"),
+                "currentPrice": current_price,
+                "returns": returns
+            }
+            
+        data = await asyncio.to_thread(fetch_data)
+        if not data:
+            raise HTTPException(status_code=404, detail="종목 데이터를 찾을 수 없습니다.")
+            
+        return JSONResponse(content={
+            "success": True,
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Stock Detail Fetch Error [{ticker}]: {e}")
+        raise HTTPException(status_code=500, detail=f"종목 정보 조회 실패: {str(e)}")
 
 
 # ─── 서버 실행 ───────────────────────────────────────────────────
