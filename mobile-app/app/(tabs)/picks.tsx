@@ -12,7 +12,7 @@ import {
   StatusBar,
   Animated,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StorageService } from '../../services/storage';
 import { ApiService } from '../../services/api';
@@ -101,7 +101,7 @@ export default function PicksScreen() {
 
       {/* ── 헤더 ── */}
       <LinearGradient colors={['#0D1240', COLORS.bgBase]} style={styles.header}>
-        <Text style={styles.headerTitle}>📅 찰리 픽 트래커</Text>
+        <Text style={styles.headerTitle}>📅 오늘의 픽 트래커</Text>
         <Text style={styles.headerSubtitle}>수혜주 결과 · 재료 소멸 · 뉴스 유효기간</Text>
 
         {/* 이달 적중률 요약 */}
@@ -208,7 +208,7 @@ function PickCard({ pick }: { pick: CharliePickResult }) {
   const statusIcon = pending ? '⏳' : isHit ? '✅' : '❌';
 
   return (
-    <View style={styles.pickCard}>
+    <TouchableOpacity style={styles.pickCard} onPress={() => router.push(`/stock/${pick.ticker}`)} activeOpacity={0.7}>
       <View style={styles.pickCardHeader}>
         <View style={styles.pickStockInfo}>
           <Text style={styles.pickStockName}>{pick.stockName}</Text>
@@ -230,7 +230,7 @@ function PickCard({ pick }: { pick: CharliePickResult }) {
         </View>
         <Text style={styles.pickDayText}>{formatDay(pick.currentDay)} 경과</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -242,7 +242,7 @@ function MaterialCard({ pick }: { pick: CharliePickResult }) {
   const barColor = isExpiring ? COLORS.accentRed : daysLeft <= 4 ? COLORS.accentGold : COLORS.accentGreen;
 
   return (
-    <View style={[styles.materialCard, isExpiring && styles.materialCardExpiring]}>
+    <TouchableOpacity style={[styles.materialCard, isExpiring && styles.materialCardExpiring]} onPress={() => router.push(`/stock/${pick.ticker}`)} activeOpacity={0.7}>
       {isExpiring && (
         <View style={styles.expiringBadge}>
           <Text style={styles.expiringBadgeText}>🔔 소멸 임박</Text>
@@ -275,7 +275,7 @@ function MaterialCard({ pick }: { pick: CharliePickResult }) {
           </Text>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -352,14 +352,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgBase },
 
   // ── 헤더 ──
-  header: { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 0 },
-  headerTitle: { fontSize: FONTS.xxl, fontWeight: FONTS.extrabold, color: COLORS.textPrimary, paddingHorizontal: SPACING.base },
+  header: { paddingTop: Platform.OS === 'ios' ? 45 : 20, paddingBottom: 0 },
+  headerTitle: { fontSize: FONTS.xl, fontWeight: FONTS.extrabold, color: COLORS.textPrimary, paddingHorizontal: SPACING.base },
   headerSubtitle: { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: 2, paddingHorizontal: SPACING.base },
 
   // ── 적중률 박스 ──
-  accuracyBox: { flexDirection: 'row', alignItems: 'center', gap: SPACING.base, marginHorizontal: SPACING.base, marginTop: SPACING.base, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: SPACING.base, borderWidth: 1, borderColor: COLORS.borderCard },
-  accuracyBadge: { alignItems: 'center', paddingHorizontal: SPACING.base, paddingVertical: SPACING.sm, borderRadius: RADIUS.lg, borderWidth: 1, minWidth: 80 },
-  accuracyPct: { fontSize: FONTS.xxxl, fontWeight: FONTS.black },
+  accuracyBox: { flexDirection: 'row', alignItems: 'center', gap: SPACING.base, marginHorizontal: SPACING.base, marginTop: SPACING.sm, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderCard },
+  accuracyBadge: { alignItems: 'center', paddingHorizontal: SPACING.base, paddingVertical: SPACING.xs, borderRadius: RADIUS.lg, borderWidth: 1, minWidth: 70 },
+  accuracyPct: { fontSize: FONTS.xxl, fontWeight: FONTS.black },
   accuracyLabel: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
   accuracyStats: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   statItem: { alignItems: 'center', gap: 2 },

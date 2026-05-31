@@ -404,7 +404,7 @@ export default function SettingsScreen() {
         {/* ── 투자 성향 설정 (6순위) ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🎯 나의 투자 성향</Text>
-          <Text style={styles.sectionSubtitle}>성향에 맞게 찰리의 분석 톤이 자동 조절됩니다</Text>
+          <Text style={styles.sectionSubtitle}>성향에 맞게 AI의 분석 톤이 자동 조절됩니다</Text>
 
           {INVESTOR_LEVELS.map(level => {
             const isActive = (settings.investorLevel ?? 'intermediate') === level.key;
@@ -430,7 +430,7 @@ export default function SettingsScreen() {
 
           <View style={styles.levelNote}>
             <Text style={styles.levelNoteText}>
-              💡 투자 경험에 맞는 성향을 선택하면 찰리가 적합한 전략을 제시합니다
+              💡 투자 경험에 맞는 성향을 선택하면 AI가 적합한 전략을 제시합니다
             </Text>
           </View>
         </View>

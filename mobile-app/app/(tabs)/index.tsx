@@ -25,7 +25,7 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 const LOADING_STEPS = [
   '📡 전 세계 뉴스 수집 중...',
   '🔍 AI가 핵심 뉴스를 선별 중...',
-  '🤖 찰리가 나비효과를 분석 중...',
+  '🤖 AI가 나비효과를 분석 중...',
   '📈 수혜주 매핑 중...',
   '⚡ 리포트 마무리 중...',
 ];
@@ -164,7 +164,7 @@ export default function DashboardScreen() {
         </View>
         <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: SPACING.md }} />
         <Text style={styles.loadingText}>{serverProgress || LOADING_STEPS[loadingStep]}</Text>
-        <Text style={styles.loadingSubtext}>찰리 AI가 전 세계 뉴스를 분석하고 있어요</Text>
+        <Text style={styles.loadingSubtext}>AI가 전 세계 뉴스를 분석하고 있어요</Text>
         <View style={styles.stepIndicator}>
           {LOADING_STEPS.map((_, i) => (
             <View key={i} style={[styles.stepDot, i === loadingStep && styles.stepDotActive]} />
@@ -277,7 +277,7 @@ export default function DashboardScreen() {
             >
               <View style={styles.charlieHeader}>
                 <View style={styles.charlieBadge}>
-                  <Text style={styles.charlieBadgeText}>💬 찰리의 오늘 한마디</Text>
+                  <Text style={styles.charlieBadgeText}>💬 오늘의 한 마디</Text>
                 </View>
               </View>
               <Text style={styles.charlieText}>{charlieComment}</Text>
