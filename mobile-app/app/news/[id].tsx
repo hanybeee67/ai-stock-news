@@ -365,7 +365,9 @@ function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (tick
               <View style={styles.liveDataRow}>
                 <Text style={styles.liveDataLabel}>현재가</Text>
                 <Text style={styles.liveDataValue}>
-                  {liveData.currency} {liveData.currentPrice?.toFixed(2)}
+                  {liveData.currency === 'KRW' ? `₩${liveData.currentPrice?.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`
+                 : liveData.currency === 'JPY' ? `¥${liveData.currentPrice?.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`
+                 : `$${liveData.currentPrice?.toFixed(2)}`}
                 </Text>
               </View>
               {liveData.returns && (

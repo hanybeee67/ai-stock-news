@@ -354,6 +354,13 @@ async def get_stock_detail(ticker: str):
             start_price = history_data['Close'].iloc[0] if n <= days_ago else history_data['Close'].iloc[-(days_ago + 1)]
             return round(((current_price - float(start_price)) / float(start_price)) * 100, 2)
 
+        # 통화 추론 (info에 없는 경우)
+        default_currency = "USD"
+        if ticker.endswith(".KS") or ticker.endswith(".KQ"):
+            default_currency = "KRW"
+        elif ticker.endswith(".T"):
+            default_currency = "JPY"
+            
         data = {
             "ticker": ticker,
             "name":        info.get("shortName") or info.get("longName") or ticker,
@@ -362,7 +369,7 @@ async def get_stock_detail(ticker: str):
             "summary":     info.get("longBusinessSummary", "제공된 기업 정보가 없습니다."),
             "marketCap":   info.get("marketCap", 0),
             "peRatio":     info.get("trailingPE") or info.get("forwardPE") or None,
-            "currency":    info.get("currency", "USD"),
+            "currency":    info.get("currency") or default_currency,
             "currentPrice": current_price,
             "returns": {
                 "1d": get_return(1),
