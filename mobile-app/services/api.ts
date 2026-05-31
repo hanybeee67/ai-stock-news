@@ -245,4 +245,16 @@ export const ApiService = {
     }
     return null;
   },
+
+  // ─── 종목 상세 조회 (백엔드 캐시 활용) ──────────────────────────────
+  async fetchStockDetail(ticker: string): Promise<any> {
+    try {
+      const client = await getClient();
+      const res = await client.get(`/api/stock/${ticker}`);
+      return res.data?.data ?? null;
+    } catch (e) {
+      console.warn(`[API] ⚠ 종목 상세 조회 실패: ${ticker}`);
+      return null;
+    }
+  },
 };

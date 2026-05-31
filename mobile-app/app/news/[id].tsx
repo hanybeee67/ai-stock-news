@@ -1,6 +1,6 @@
 // 📁 app/news/[id].tsx — v2.0: marketImpact 컬러 토글, AI 신뢰도 별점, 나비효과 인디케이터
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   StatusBar, Linking, Platform, Share, Animated,
@@ -255,27 +255,57 @@ function ButterflyEffectCard({ effect, isLast }: { effect: ButterflyEffect; isLa
   );
 }
 
-// ── 수혜주 카드 ──────────────────────────────────────────────────────
+// ── 수혜주 카드 (아코디언 인라인 확장, 즉시 표시) ─────────────────────
 function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (ticker: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [liveData, setLiveData] = useState<any>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
+
   const relevanceConfig = {
     high:   { label: '연관 높음', color: COLORS.accentGreen, bg: COLORS.accentGreenDim },
     medium: { label: '연관 보통', color: COLORS.accentGold,  bg: COLORS.accentGoldDim },
     low:    { label: '연관 낮음', color: COLORS.textMuted,   bg: COLORS.bgSurface },
   };
   const rel = relevanceConfig[stock.relevance] ?? relevanceConfig.low;
-  const marketFlags: Record<string, string> = { KRX:'🇰🇷', NYSE:'🇺🇸', NASDAQ:'🇺🇸', TSE:'🇯🇵' };
+  const marketFlags: Record<string, string> = { KRX: '🇰🇷', NYSE: '🇺🇸', NASDAQ: '🇺🇸', TSE: '🇯🇵' };
 
-  // 추세 색상
-  const trendColor = stock.trendDirection === 'up' ? COLORS.accentGreen
-    : stock.trendDirection === 'down' ? COLORS.accentRed
-    : COLORS.accentGold;
+  const handleToggle = () => {
+    const toValue = expanded ? 0 : 1;
+    setExpanded(!expanded);
+    Animated.spring(expandAnim, {
+      toValue,
+      friction: 8,
+      tension: 60,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // 실시간 시세 조회 (선택적 — 버튼 누를 때만)
+  const handleLivePrice = async () => {
+    if (liveData) return; // 이미 조회된 경우 스킵
+    setLiveLoading(true);
+    try {
+      const { ApiService } = require('../../services/api');
+      const detail = await ApiService.fetchStockDetail(stock.ticker);
+      setLiveData(detail);
+    } catch {
+      // 실패 시 조용히 무시
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  const retColor = (v: number) => v > 0 ? COLORS.accentGreen : v < 0 ? COLORS.accentRed : COLORS.textMuted;
+  const retPrefix = (v: number) => v > 0 ? '+' : '';
 
   return (
-    <TouchableOpacity 
-      style={styles.stockCard} 
-      activeOpacity={0.7}
-      onPress={() => onPress(stock.ticker)}
+    <TouchableOpacity
+      style={styles.stockCard}
+      activeOpacity={0.85}
+      onPress={handleToggle}
     >
+      {/* ── 헤더 (항상 표시) ── */}
       <View style={styles.stockCardHeader}>
         <View style={styles.stockNameRow}>
           <Text style={styles.stockFlag}>{marketFlags[stock.market] ?? '🌐'}</Text>
@@ -284,17 +314,82 @@ function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (tick
             <Text style={styles.stockTicker}>{stock.ticker} · {stock.market}</Text>
           </View>
         </View>
-        <View style={[styles.relevanceBadge, { backgroundColor: rel.bg }]}>
-          <Text style={[styles.relevanceText, { color: rel.color }]}>{rel.label}</Text>
+        <View style={styles.stockCardRight}>
+          <View style={[styles.relevanceBadge, { backgroundColor: rel.bg }]}>
+            <Text style={[styles.relevanceText, { color: rel.color }]}>{rel.label}</Text>
+          </View>
+          <Text style={styles.expandIcon}>{expanded ? '▲' : '▼'}</Text>
         </View>
       </View>
-      <Text style={styles.stockSector}>🏭 {stock.sector}</Text>
-      <Text style={styles.stockReason}>{stock.reason}</Text>
+
+      {/* ── recentTrend 미리보기 (항상 표시) ── */}
       {stock.recentTrend && (
-        <View style={[styles.trendChip, { borderColor: trendColor + '40' }]}>
-          <Text style={[styles.trendText, { color: trendColor }]}>
-            {stock.trendDirection === 'up' ? '▲' : stock.trendDirection === 'down' ? '▼' : '◆'} {stock.recentTrend}
-          </Text>
+        <View style={styles.trendPreview}>
+          <Text style={styles.trendPreviewText}>📊 {stock.recentTrend}</Text>
+        </View>
+      )}
+
+      {/* ── 펼쳐진 상세 영역 ── */}
+      {expanded && (
+        <View style={styles.expandedArea}>
+          <View style={styles.dividerLine} />
+
+          {/* 섹터 */}
+          <Text style={styles.stockSector}>🏭 {stock.sector}</Text>
+
+          {/* 수혜 이유 */}
+          <View style={styles.reasonBox}>
+            <Text style={styles.reasonLabel}>💡 AI 수혜 근거</Text>
+            <Text style={styles.stockReason}>{stock.reason}</Text>
+          </View>
+
+          {/* 실시간 시세 영역 */}
+          {!liveData && !liveLoading && (
+            <TouchableOpacity
+              style={styles.livePriceBtn}
+              onPress={handleLivePrice}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.livePriceBtnText}>📡 실시간 시세 불러오기</Text>
+            </TouchableOpacity>
+          )}
+
+          {liveLoading && (
+            <View style={styles.liveLoadingRow}>
+              <Text style={styles.liveLoadingText}>⏳ 시세 조회 중...</Text>
+            </View>
+          )}
+
+          {liveData && (
+            <View style={styles.liveDataBox}>
+              <View style={styles.liveDataRow}>
+                <Text style={styles.liveDataLabel}>현재가</Text>
+                <Text style={styles.liveDataValue}>
+                  {liveData.currency} {liveData.currentPrice?.toFixed(2)}
+                </Text>
+              </View>
+              {liveData.returns && (
+                <View style={styles.returnsRow}>
+                  {[
+                    { k: '1d', label: '1일' },
+                    { k: '1w', label: '1주' },
+                    { k: '1m', label: '1달' },
+                    { k: '1y', label: '1년' },
+                  ].map(({ k, label }) => {
+                    const v = liveData.returns[k];
+                    return (
+                      <View key={k} style={styles.returnCell}>
+                        <Text style={styles.returnLabel}>{label}</Text>
+                        <Text style={[styles.returnValue, { color: retColor(v) }]}>
+                          {retPrefix(v)}{v?.toFixed(1)}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -393,17 +488,39 @@ const styles = StyleSheet.create({
   indicatorText: { fontSize:10, color: COLORS.textMuted },
 
   stockCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.sm, borderWidth:1, borderColor: COLORS.borderCard },
-  stockCardHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom: SPACING.sm },
+  stockCardHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom: SPACING.xs },
+  stockCardRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  expandIcon: { fontSize: 10, color: COLORS.textMuted, marginLeft: 4 },
   stockNameRow: { flexDirection:'row', alignItems:'center', gap: SPACING.sm, flex:1 },
   stockFlag: { fontSize:20 },
   stockName: { fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.textPrimary },
   stockTicker: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop:1 },
   relevanceBadge: { paddingHorizontal: SPACING.sm, paddingVertical:4, borderRadius: RADIUS.full },
   relevanceText: { fontSize:11, fontWeight: FONTS.bold },
+  trendPreview: { backgroundColor: COLORS.bgSurface, borderRadius: RADIUS.sm, paddingHorizontal: SPACING.sm, paddingVertical: 4, alignSelf: 'flex-start' },
+  trendPreviewText: { fontSize: FONTS.xs, color: COLORS.textSecondary },
+  // 아코디언 확장 영역
+  expandedArea: { marginTop: SPACING.sm },
+  dividerLine: { height: 1, backgroundColor: COLORS.borderLight, marginBottom: SPACING.sm },
   stockSector: { fontSize: FONTS.xs, color: COLORS.primary, marginBottom: SPACING.xs, fontWeight: FONTS.medium },
+  reasonBox: { backgroundColor: 'rgba(79,110,247,0.06)', borderRadius: RADIUS.md, padding: SPACING.sm, marginBottom: SPACING.sm },
+  reasonLabel: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: FONTS.bold, marginBottom: 4 },
   stockReason: { fontSize: FONTS.sm, color: COLORS.textSecondary, lineHeight:18 },
   trendChip: { marginTop: SPACING.sm, alignSelf:'flex-start', paddingHorizontal: SPACING.sm, paddingVertical:4, borderRadius: RADIUS.sm, borderWidth:1, backgroundColor: COLORS.bgSurface },
   trendText: { fontSize:11, fontWeight: FONTS.semibold },
+  // 실시간 시세
+  livePriceBtn: { borderWidth: 1, borderColor: COLORS.primary + '40', borderRadius: RADIUS.md, padding: SPACING.sm, alignItems: 'center', backgroundColor: COLORS.primary + '08' },
+  livePriceBtnText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: FONTS.semibold },
+  liveLoadingRow: { alignItems: 'center', paddingVertical: SPACING.sm },
+  liveLoadingText: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  liveDataBox: { backgroundColor: COLORS.bgSurface, borderRadius: RADIUS.md, padding: SPACING.sm, marginTop: SPACING.xs },
+  liveDataRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.xs },
+  liveDataLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  liveDataValue: { fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.textPrimary },
+  returnsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  returnCell: { alignItems: 'center', flex: 1 },
+  returnLabel: { fontSize: 10, color: COLORS.textMuted, marginBottom: 2 },
+  returnValue: { fontSize: FONTS.sm, fontWeight: FONTS.bold },
 
   riskHeader: { flexDirection:'row', alignItems:'center', gap: SPACING.base, backgroundColor: COLORS.dangerBg, borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.base, borderWidth:1, borderColor: COLORS.danger + '40' },
   riskHeaderEmoji: { fontSize:28 },
