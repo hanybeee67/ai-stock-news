@@ -8,6 +8,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  ScrollView,
   Dimensions,
   Platform,
   StatusBar as RNStatusBar,
@@ -151,162 +152,174 @@ export default function RootLayout() {
 
         {/* 그리드 라인 장식 */}
         <View style={styles.gridOverlay}>
-          {[...Array(6)].map((_, i) => (
+          {[...Array(8)].map((_, i) => (
             <View key={i} style={styles.gridLine} />
           ))}
         </View>
 
-        {/* ── 로고 & 타이틀 영역 ── */}
-        <View style={styles.logoArea}>
-          {/* 로고 아이콘 */}
+        {/* ── 스크롤 가능 콘텐츠 (동의 버튼이 항상 보이도록) ── */}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── 로고 & 타이틀 영역 ── */}
+          <View style={styles.logoArea}>
+            {/* 로고 아이콘 */}
+            <Animated.View
+              style={[
+                styles.logoBox,
+                {
+                  opacity: logoAnim,
+                  transform: [
+                    { scale: Animated.multiply(logoScale, pulseAnim) },
+                    { translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) },
+                  ],
+                },
+              ]}
+            >
+              <LinearGradient
+                colors={['#4F6EF7', '#A855F7']}
+                style={styles.logoGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Text style={styles.logoEmoji}>✈️</Text>
+              </LinearGradient>
+              {/* 글로우 링 */}
+              <View style={styles.glowRing1} />
+              <View style={styles.glowRing2} />
+            </Animated.View>
+
+            {/* 앱 이름 */}
+            <Animated.View
+              style={{
+                opacity: logoAnim,
+                transform: [{ translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+              }}
+            >
+              <Text style={styles.appName}>StockFly</Text>
+              <Text style={styles.appNameSub}>STOCKFLY AI</Text>
+            </Animated.View>
+
+            {/* 구분선 */}
+            <Animated.View style={[styles.divider, { opacity: tagAnim, scaleX: tagAnim }]}>
+              <LinearGradient
+                colors={['transparent', '#4F6EF7', 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+            </Animated.View>
+
+            {/* 태그라인 */}
+            <Animated.View
+              style={{
+                opacity: tagAnim,
+                transform: [{ translateY: tagAnim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }],
+              }}
+            >
+              <Text style={styles.tagline}>전 세계 뉴스 → 나비효과 분석</Text>
+              <Text style={styles.taglineSub}>⏱ 오늘 아침 딱 3분 리포트</Text>
+            </Animated.View>
+
+            {/* 기능 배지 */}
+            <Animated.View style={[styles.featureBadges, { opacity: tagAnim }]}>
+              {['🌐 글로벌 뉴스', '🤖 AI 분석', '📈 수혜주'].map((f, i) => (
+                <View key={i} style={styles.featureBadge}>
+                  <Text style={styles.featureBadgeText}>{f}</Text>
+                </View>
+              ))}
+            </Animated.View>
+          </View>
+
+          {/* ── 투자 주의 경고 ── */}
           <Animated.View
             style={[
-              styles.logoBox,
+              styles.disclaimerArea,
               {
-                opacity: logoAnim,
-                transform: [
-                  { scale: Animated.multiply(logoScale, pulseAnim) },
-                  { translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) },
-                ],
+                opacity: discAnim,
+                transform: [{ translateY: discAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
               },
             ]}
           >
-            <LinearGradient
-              colors={['#4F6EF7', '#A855F7']}
-              style={styles.logoGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.logoEmoji}>📊</Text>
-            </LinearGradient>
-            {/* 글로우 링 */}
-            <View style={styles.glowRing1} />
-            <View style={styles.glowRing2} />
-          </Animated.View>
-
-          {/* 앱 이름 */}
-          <Animated.View
-            style={{
-              opacity: logoAnim,
-              transform: [{ translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-            }}
-          >
-            <Text style={styles.appName}>찰리</Text>
-            <Text style={styles.appNameSub}>CHARLIE AI</Text>
-          </Animated.View>
-
-          {/* 구분선 */}
-          <Animated.View style={[styles.divider, { opacity: tagAnim, scaleX: tagAnim }]}>
-            <LinearGradient
-              colors={['transparent', '#4F6EF7', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-          </Animated.View>
-
-          {/* 태그라인 */}
-          <Animated.View
-            style={{
-              opacity: tagAnim,
-              transform: [{ translateY: tagAnim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }],
-            }}
-          >
-            <Text style={styles.tagline}>전 세계 뉴스 → 나비효과 분석</Text>
-            <Text style={styles.taglineSub}>⏱ 오늘 아침 딱 3분 리포트</Text>
-          </Animated.View>
-
-          {/* 기능 배지 */}
-          <Animated.View style={[styles.featureBadges, { opacity: tagAnim }]}>
-            {['🌐 글로벌 뉴스', '🤖 AI 분석', '📈 수혜주'].map((f, i) => (
-              <View key={i} style={styles.featureBadge}>
-                <Text style={styles.featureBadgeText}>{f}</Text>
-              </View>
-            ))}
-          </Animated.View>
-        </View>
-
-        {/* ── 투자 주의 경고 ── */}
-        <Animated.View
-          style={[
-            styles.disclaimerArea,
-            {
-              opacity: discAnim,
-              transform: [{ translateY: discAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
-            },
-          ]}
-        >
-          {/* 경고 카드 */}
-          <View style={styles.disclaimerCard}>
-            {/* 헤더 */}
-            <LinearGradient
-              colors={['rgba(245,200,66,0.18)', 'rgba(245,200,66,0.06)']}
-              style={styles.disclaimerHeader}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <View style={styles.disclaimerHeaderLeft}>
-                <View style={styles.warningIconBox}>
-                  <Text style={styles.warningIcon}>⚠️</Text>
-                </View>
-                <View>
-                  <Text style={styles.disclaimerTitle}>투자 유의사항</Text>
-                  <Text style={styles.disclaimerTitleSub}>Investment Disclaimer</Text>
-                </View>
-              </View>
-              <View style={styles.disclaimerBadge}>
-                <Text style={styles.disclaimerBadgeText}>필독</Text>
-              </View>
-            </LinearGradient>
-
-            {/* 본문 */}
-            <View style={styles.disclaimerBody}>
-              <Text style={styles.disclaimerText}>
-                본 앱의 모든 분석은{' '}
-                <Text style={styles.disclaimerHighlight}>투자 참고용</Text>
-                이며{'\n'}투자 권유가 아닙니다.
-              </Text>
-              <Text style={styles.disclaimerText2}>
-                투자 손실에 대한 책임은{' '}
-                <Text style={styles.disclaimerHighlight}>투자자 본인</Text>
-                에게 있습니다.
-              </Text>
-
-              {/* 주의사항 리스트 */}
-              <View style={styles.disclaimerList}>
-                {[
-                  '주식 투자는 원금 손실 위험이 있습니다',
-                  'AI 분석은 100% 정확하지 않을 수 있습니다',
-                  '과거 실적이 미래를 보장하지 않습니다',
-                ].map((item, i) => (
-                  <View key={i} style={styles.disclaimerListItem}>
-                    <View style={styles.disclaimerDot} />
-                    <Text style={styles.disclaimerListText}>{item}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-
-          {/* 동의 버튼 */}
-          <Animated.View style={{ opacity: btnAnim, transform: [{ scale: btnAnim }] }}>
-            <TouchableOpacity
-              style={styles.agreeBtn}
-              onPress={handleAgree}
-              activeOpacity={0.85}
-            >
+            {/* 경고 카드 */}
+            <View style={styles.disclaimerCard}>
+              {/* 헤더 */}
               <LinearGradient
-                colors={['#4F6EF7', '#7B54F5']}
-                style={styles.agreeBtnGradient}
+                colors={['rgba(245,200,66,0.18)', 'rgba(245,200,66,0.06)']}
+                style={styles.disclaimerHeader}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.agreeBtnText}>내용을 확인했습니다  →</Text>
+                <View style={styles.disclaimerHeaderLeft}>
+                  <View style={styles.warningIconBox}>
+                    <Text style={styles.warningIcon}>⚠️</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.disclaimerTitle}>투자 유의사항</Text>
+                    <Text style={styles.disclaimerTitleSub}>Investment Disclaimer</Text>
+                  </View>
+                </View>
+                <View style={styles.disclaimerBadge}>
+                  <Text style={styles.disclaimerBadgeText}>필독</Text>
+                </View>
               </LinearGradient>
-            </TouchableOpacity>
-            <Text style={styles.agreeHint}>위 내용에 동의하고 앱을 시작합니다</Text>
+
+              {/* 본문 */}
+              <View style={styles.disclaimerBody}>
+                <Text style={styles.disclaimerText}>
+                  본 앱의 모든 분석은{' '}
+                  <Text style={styles.disclaimerHighlight}>투자 참고용</Text>
+                  이며{'\n'}투자 권유가 아닙니다.
+                </Text>
+                <Text style={styles.disclaimerText2}>
+                  투자 손실에 대한 책임은{' '}
+                  <Text style={styles.disclaimerHighlight}>투자자 본인</Text>
+                  에게 있습니다.
+                </Text>
+
+                {/* 주의사항 리스트 */}
+                <View style={styles.disclaimerList}>
+                  {[
+                    '주식 투자는 원금 손실 위험이 있습니다',
+                    'AI 분석은 100% 정확하지 않을 수 있습니다',
+                    '과거 실적이 미래를 보장하지 않습니다',
+                  ].map((item, i) => (
+                    <View key={i} style={styles.disclaimerListItem}>
+                      <View style={styles.disclaimerDot} />
+                      <Text style={styles.disclaimerListText}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* 동의 버튼 */}
+            <Animated.View style={{ opacity: btnAnim, transform: [{ scale: btnAnim }] }}>
+              <TouchableOpacity
+                style={styles.agreeBtn}
+                onPress={handleAgree}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#4F6EF7', '#7B54F5']}
+                  style={styles.agreeBtnGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.agreeBtnText}>✅  내용을 확인했습니다</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <Text style={styles.agreeHint}>위 내용에 동의하고 StockFly를 시작합니다</Text>
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
+
+          {/* 하단 여백 */}
+          <View style={{ height: 32 }} />
+        </ScrollView>
       </Animated.View>
     );
   }
@@ -341,11 +354,17 @@ const styles = StyleSheet.create({
   introWrapper: {
     flex: 1,
     backgroundColor: '#03071A',
-    justifyContent: 'space-between',
     paddingTop: Platform.OS === 'ios' ? 60 : (RNStatusBar.currentHeight ?? 30) + 10,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 24,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: SPACING.base,
-    overflow: 'hidden',
+    paddingBottom: Platform.OS === 'ios' ? 44 : 28,
+    justifyContent: 'space-between',
+    minHeight: height - (Platform.OS === 'ios' ? 60 : (RNStatusBar.currentHeight ?? 30) + 10),
   },
 
   // ── 파티클 & 그리드 ──
@@ -371,22 +390,23 @@ const styles = StyleSheet.create({
   // ── 로고 영역 ──
   logoArea: {
     alignItems: 'center',
-    paddingTop: SPACING.lg,
-    gap: SPACING.sm,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.base,
+    gap: SPACING.xs,
   },
   logoBox: {
     position: 'relative',
     marginBottom: SPACING.sm,
   },
   logoGradient: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
+    width: 84,
+    height: 84,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoEmoji: {
-    fontSize: 50,
+    fontSize: 42,
   },
   glowRing1: {
     position: 'absolute',
@@ -409,27 +429,27 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(79,110,247,0.15)',
   },
   appName: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '900',
     color: '#FFFFFF',
     textAlign: 'center',
-    letterSpacing: 4,
-    textShadowColor: 'rgba(79,110,247,0.5)',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(79,110,247,0.6)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 20,
   },
   appNameSub: {
-    fontSize: FONTS.sm,
+    fontSize: FONTS.xs,
     fontWeight: FONTS.bold,
     color: COLORS.primary,
     textAlign: 'center',
-    letterSpacing: 8,
-    marginTop: -4,
+    letterSpacing: 6,
+    marginTop: -2,
   },
   divider: {
     width: width * 0.5,
     height: 1.5,
-    marginVertical: SPACING.sm,
+    marginVertical: SPACING.xs,
     overflow: 'hidden',
   },
   tagline: {
