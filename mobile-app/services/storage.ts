@@ -1,10 +1,10 @@
 // 📁 services/storage.ts
 // 로컬 디바이스 스토리지 서비스 (AsyncStorage 기반)
 // SQLite 수준의 구조화된 데이터 관리를 AsyncStorage로 구현
-// v2.0: 캐시 만료 검증 추가, 날짜 불일치 시 서버 재요청 유도
+// v3.0: 캐시 만료 검증, 투자 성향, Charlie Picks 추적
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppSettings, DailyReport, NewsItem } from '../types';
+import { AppSettings, DailyReport, NewsItem, CharliePickResult } from '../types';
 
 // ─── Storage Keys ─────────────────────────────────────────────────
 const KEYS = {
@@ -13,6 +13,7 @@ const KEYS = {
   REPORT_INDEX: '@aistocknews:report_index',
   CACHED_NEWS: '@aistocknews:news_cache',
   SAVED_NEWS: '@aistocknews:saved_news',
+  CHARLIE_PICKS: '@aistocknews:charlie_picks',
 } as const;
 
 // ─── 기본 앱 설정값 ────────────────────────────────────────────────
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastFetchedAt: null,
   onboardingCompleted: false,
   themeMode: 'dark',
+  investorLevel: 'intermediate',
 };
 
 // ─── 날짜 유틸 ────────────────────────────────────────────────────
@@ -141,6 +143,31 @@ export const StorageService = {
   async isNewsSaved(newsId: string): Promise<boolean> {
     const saved = await StorageService.getSavedNews();
     return saved.some(n => n.id === newsId);
+  },
+
+  /** Charlie Picks 저장 */
+  async saveCharliePicks(picks: CharliePickResult[]): Promise<void> {
+    await AsyncStorage.setItem(KEYS.CHARLIE_PICKS, JSON.stringify(picks));
+  },
+
+  /** Charlie Picks 불러오기 */
+  async getCharliePicks(): Promise<CharliePickResult[]> {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.CHARLIE_PICKS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  /** Charlie Pick 추가 */
+  async addCharliePick(pick: CharliePickResult): Promise<void> {
+    const picks = await StorageService.getCharliePicks();
+    const exists = picks.find(p => p.id === pick.id);
+    if (!exists) {
+      picks.unshift(pick);
+      await StorageService.saveCharliePicks(picks.slice(0, 50));
+    }
   },
 
   /** 모든 데이터 초기화 (개발/디버그용) */

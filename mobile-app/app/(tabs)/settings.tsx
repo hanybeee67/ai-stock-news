@@ -34,6 +34,12 @@ const TIME_PRESETS = [
   { label: '오전 9시', value: '09:00' },
 ];
 
+const INVESTOR_LEVELS = [
+  { key: 'beginner', label: '🟢 초보', desc: '6개월 미만 · 쉬운 설명 + 보수적 전략', color: COLORS.accentGreen },
+  { key: 'intermediate', label: '🟡 중급', desc: '1~3년 · 균형 잡힌 분석', color: COLORS.accentGold },
+  { key: 'advanced', label: '🔴 고수', desc: '3년 이상 · 심화 전략 + 기술적 분석', color: COLORS.accentRed },
+] as const;
+
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -395,6 +401,40 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        {/* ── 투자 성향 설정 (6순위) ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🎯 나의 투자 성향</Text>
+          <Text style={styles.sectionSubtitle}>성향에 맞게 찰리의 분석 톤이 자동 조절됩니다</Text>
+
+          {INVESTOR_LEVELS.map(level => {
+            const isActive = (settings.investorLevel ?? 'intermediate') === level.key;
+            return (
+              <TouchableOpacity
+                key={level.key}
+                style={[styles.levelCard, isActive && { borderColor: level.color + '80', backgroundColor: level.color + '10' }]}
+                onPress={() => updateSetting('investorLevel', level.key as any)}
+              >
+                <View style={styles.levelRadio}>
+                  <View style={[styles.levelRadioOuter, isActive && { borderColor: level.color }]}>
+                    {isActive && <View style={[styles.levelRadioInner, { backgroundColor: level.color }]} />}
+                  </View>
+                </View>
+                <View style={styles.levelInfo}>
+                  <Text style={[styles.levelLabel, isActive && { color: level.color }]}>{level.label}</Text>
+                  <Text style={styles.levelDesc}>{level.desc}</Text>
+                </View>
+                {isActive && <Text style={styles.levelCheck}>✓</Text>}
+              </TouchableOpacity>
+            );
+          })}
+
+          <View style={styles.levelNote}>
+            <Text style={styles.levelNoteText}>
+              💡 투자 경험에 맞는 성향을 선택하면 찰리가 적합한 전략을 제시합니다
+            </Text>
+          </View>
+        </View>
+
         {/* ── 앱 정보 & 데이터 관리 ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ℹ️ 앱 정보</Text>
@@ -705,4 +745,26 @@ const styles = StyleSheet.create({
     marginTop: SPACING.base,
   },
   dangerBtnText: { fontSize: FONTS.sm, color: COLORS.danger, fontWeight: FONTS.semibold },
+
+  // ── 투자 성향 ──
+  levelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderCard,
+    marginBottom: SPACING.sm,
+    backgroundColor: COLORS.bgSurface,
+  },
+  levelRadio: { padding: 2 },
+  levelRadioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: COLORS.textMuted, alignItems: 'center', justifyContent: 'center' },
+  levelRadioInner: { width: 10, height: 10, borderRadius: 5 },
+  levelInfo: { flex: 1 },
+  levelLabel: { fontSize: FONTS.md, fontWeight: FONTS.bold, color: COLORS.textPrimary },
+  levelDesc: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
+  levelCheck: { fontSize: FONTS.md, color: COLORS.accentGreen, fontWeight: FONTS.bold },
+  levelNote: { backgroundColor: COLORS.bgSurface, borderRadius: RADIUS.md, padding: SPACING.sm, marginTop: SPACING.xs },
+  levelNoteText: { fontSize: FONTS.xs, color: COLORS.textMuted, lineHeight: 16 },
 });

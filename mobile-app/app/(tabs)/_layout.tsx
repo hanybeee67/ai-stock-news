@@ -1,5 +1,5 @@
 // 📁 app/(tabs)/_layout.tsx
-// 탭 네비게이션 레이아웃 — 히스토리 탭 추가 (v2.0)
+// 탭 네비게이션 레이아웃 — v3.0: 픽 트래커 탭 추가
 
 import { Tabs } from 'expo-router';
 import React from 'react';
@@ -21,7 +21,7 @@ export default function TabLayout() {
           height: 70,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
           marginTop: 2,
         },
@@ -34,6 +34,15 @@ export default function TabLayout() {
           title: '오늘 브리핑',
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>📊</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="picks"
+        options={{
+          title: '픽 트래커',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>🎯</Text>
           ),
         }}
       />

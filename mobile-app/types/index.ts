@@ -59,6 +59,33 @@ export interface AppSettings {
   lastFetchedAt: string | null; // 마지막 데이터 갱신 시각
   onboardingCompleted: boolean;
   themeMode: 'dark' | 'light';  // 현재는 dark만 지원
+  investorLevel: 'beginner' | 'intermediate' | 'advanced'; // 투자 성향
+}
+
+// 수혜주 픽 추적 아이템
+export interface CharliePickResult {
+  id: string;
+  stockName: string;
+  ticker: string;
+  pickedAt: string;       // 픽 날짜 (ISO)
+  newsTitle: string;      // 관련 뉴스 제목
+  category: string;
+  returnPct: number | null; // 수익률 (%)
+  isHit: boolean | null;    // 적중 여부 (null = 아직 미결)
+  materialExpireDay: number; // 재료 유효 일수 (D+N)
+  currentDay: number;        // 현재 D+N
+}
+
+// 시장 온도 수준
+export type MarketTemperature = 'overheat' | 'warm' | 'neutral' | 'cool' | 'cold';
+
+export interface MarketThermometer {
+  temperature: MarketTemperature;
+  score: number;          // 0~100 (50 = 중립)
+  label: string;          // "과열" | "따뜻" | "보통" | "냉각" | "한랭"
+  emoji: string;
+  sectors: { name: string; trend: 'up' | 'down' | 'neutral'; pct?: number }[];
+  charlieComment: string; // 찰리 한 마디
 }
 
 export interface ApiResponse<T> {
