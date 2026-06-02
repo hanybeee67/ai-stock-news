@@ -23,6 +23,26 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null): CharliePickResult[] {
   let updated = [...stored];
 
+  // [긴급 복구] 기존 스토리지에 잘못 저장된 오염된 데이터(환각 티커 및 중복) 청소
+  // 1. 티커가 '005930.KS'이면서 종목명에 '삼성'이 안 들어간 데이터(AI 환각) 삭제
+  updated = updated.filter(p => {
+    if (p.ticker === '005930.KS' && !p.stockName.includes('삼성')) {
+      return false; // 환각 데이터 버림
+    }
+    return true;
+  });
+
+  // 2. 이미 저장된 데이터 중에서도 종목명 기준으로 중복 제거 (가장 최신 것만 남김)
+  const uniqueMap = new Map<string, CharliePickResult>();
+  // 최신순으로 정렬 후 Map에 넣어서 고유한 종목명만 유지
+  updated.sort((a, b) => new Date(b.pickedAt).getTime() - new Date(a.pickedAt).getTime());
+  updated.forEach(p => {
+    if (!uniqueMap.has(p.stockName)) {
+      uniqueMap.set(p.stockName, p);
+    }
+  });
+  updated = Array.from(uniqueMap.values());
+
   // 1. 저장된 픽의 currentDay(D+N) 자동 갱신
   const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
   const todayKSTStr = kstNow.toISOString().split('T')[0];
