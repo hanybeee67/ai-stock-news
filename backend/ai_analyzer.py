@@ -278,7 +278,7 @@ class AIAnalyzer:
                 logger.error(f"❌ Claude API 연결 실패: {e}")
                 raise RuntimeError("Claude API에 연결할 수 없습니다. 인터넷 연결을 확인하세요.")
 
-        # ── 주가 동향 추가 (yfinance) ──
+        # ── 주가 동향 추가 및 티커 자동 보정 (yfinance & Naver) ──
         await self._enrich_stock_trends(report)
 
         # ── 필수 필드 보완 ──
@@ -288,11 +288,44 @@ class AIAnalyzer:
         logger.info(f"📊 분석 완료: {len(report.get('topNews', []))}개 뉴스 선별")
         return report
 
+    async def _resolve_korean_ticker(self, name: str) -> str:
+        """네이버 금융 검색 API를 통해 한국 종목의 정확한 6자리 티커(+ .KS/.KQ)를 반환"""
+        import aiohttp
+        import urllib.parse
+        url = f"https://ac.finance.naver.com/ac?q={urllib.parse.quote(name)}&q_enc=utf-8&st=111&r_format=json&r_enc=utf-8"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        items = data.get('items', [[]])[0]
+                        if items:
+                            for item in items:
+                                if len(item) >= 3 and item[1] == name:
+                                    code, _, market = item[0], item[1], item[2]
+                                    return f"{code}.KS" if market == 'KOSPI' else f"{code}.KQ"
+                            # 정확히 일치하는 이름이 없으면 첫번째 결과 반환
+                            code, market = items[0][0], items[0][2]
+                            return f"{code}.KS" if market == 'KOSPI' else f"{code}.KQ"
+        except Exception as e:
+            logger.warning(f"Ticker resolution failed for {name}: {e}")
+        return ""
+
     async def _enrich_stock_trends(self, report: dict) -> None:
         """수혜주에 최근 주가 동향 추가 (yfinance, 실패해도 무시)"""
         for news in report.get("topNews", []):
             for stock in news.get("beneficiaryStocks", []):
                 ticker = stock.get("ticker", "")
+                name = stock.get("name", "")
+                
+                # 한국 종목인 경우 네이버 검색으로 정확한 티커 보정
+                is_korean = any("\u3131" <= c <= "\u318E" or "\uAC00" <= c <= "\uD7A3" for c in name)
+                if is_korean:
+                    real_ticker = await self._resolve_korean_ticker(name)
+                    if real_ticker:
+                        stock["ticker"] = real_ticker
+                        ticker = real_ticker
+
                 if not ticker:
                     continue
                 try:
