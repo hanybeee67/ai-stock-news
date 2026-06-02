@@ -102,20 +102,9 @@ export const ApiService = {
     return BACKEND_URL;
   },
 
-  // ─── 오늘 리포트 가져오기 ──────────────────────────────────────────
+  // ─── 오늘 리포트 가져오기 ────────────────────────────────────────
   async fetchDailyReport(forceRefresh = false): Promise<DailyReport> {
-    const today = new Date().toISOString().split('T')[0];
-
-    // 1. 캐시 확인 (강제 갱신이 아닐 때만)
-    if (!forceRefresh) {
-      const cached = await StorageService.getTodayReport();
-      if (cached) {
-        console.log('[API] ✓ 캐시된 리포트 사용:', cached.date);
-        return cached;
-      }
-    }
-
-    // 2. 서버에서 가져오기 시도
+    // 1. 서버에서 직접 가져오기 (오늘 브리핑은 항상 서버를 먼저 확인)
     try {
       const client = await getClient();
       const res = await client.get<ApiResponse<DailyReport>>('/api/daily-report');
@@ -131,15 +120,22 @@ export const ApiService = {
         console.log('[API] ⏳ 분석 진행 중...');
         throw new Error('analyzing');
       }
-      console.warn('[API] ⚠ 서버 연결 실패, Mock 데이터 사용');
+      console.warn('[API] ⚠ 서버 연결 실패:', err?.message);
     }
 
-    // 3. Fallback: Mock 데이터 (캐시 오염 방지를 위해 저장하지 않음)
+    // 2. 서버 실패 시 로컈 캐시 폴백 (오프라인 대비)
+    if (!forceRefresh) {
+      const cached = await StorageService.getTodayReport();
+      if (cached) {
+        console.log('[API] ⚠ 서버 실패 → 컨캐시 폴백:', cached.date);
+        return cached;
+      }
+    }
+
+    // 3. Fallback: Mock 데이터 (컨캐시 오염 방지를 위해 저장하지 않음)
     const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
     const todayKST = kstNow.toISOString().split('T')[0];
     const mockReport = { ...MOCK_DAILY_REPORT, date: todayKST };
-    
-    // await StorageService.saveDailyReport(mockReport); // 삭제: 서버 실패 시 캐시 오염 방지
     return mockReport;
   },
 
