@@ -42,8 +42,8 @@ export const MOCK_DAILY_REPORT: DailyReport = {
       beneficiaryStocks: [
         {
           name: '동진쎄미켐',
-          ticker: '005290.KS',
-          market: 'KRX',
+          ticker: '005290.KQ',
+          market: 'KOSDAQ',
           relevance: 'high',
           reason: '미국 팹 증설 시 포토레지스트 핵심 공급사. 삼성·SK하이닉스 대비 직접 노출도 높음.',
           sector: '반도체 소재',

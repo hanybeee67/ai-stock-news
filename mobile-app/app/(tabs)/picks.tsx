@@ -24,11 +24,22 @@ function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null)
   let updated = [...stored];
 
   // [긴급 복구] 기존 스토리지에 잘못 저장된 오염된 데이터(환각 티커 및 중복) 청소
-  // 1. 티커가 '005930.KS'이면서 종목명에 '삼성'이 안 들어간 데이터(AI 환각) 삭제
+  // 1. 이름과 티커가 명백히 불일치하는 과거 AI 환각 데이터 영구 삭제
   updated = updated.filter(p => {
-    if (p.ticker === '005930.KS' && !p.stockName.includes('삼성')) {
-      return false; // 환각 데이터 버림
-    }
+    const name = p.stockName;
+    const ticker = p.ticker;
+    
+    // 삼성전자가 아닌데 005930인 경우 (한미반도체 오작동 원인)
+    if (ticker.includes('005930') && !name.includes('삼성')) return false;
+    
+    // GS건설이 아닌데 006360이거나, 동진쎄미켐인데 코스피(.KS)로 잘못 매핑된 경우 (GS건설 오작동 원인 등)
+    if (ticker.includes('006360') && !name.includes('GS')) return false;
+    if (name.includes('동진') && ticker.includes('006360')) return false;
+    
+    // 동진쎄미켐인데 티커가 잘못된 경우 (실제는 005290.KQ)
+    if (name.includes('동진') && !ticker.includes('005290')) return false;
+    if (name.includes('한미반도체') && !ticker.includes('042700')) return false;
+
     return true;
   });
 
