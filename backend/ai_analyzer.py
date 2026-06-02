@@ -125,7 +125,7 @@ def build_analysis_prompt(news_items: List[Dict]) -> str:
       "beneficiaryStocks": [
         {{
           "name": "종목명 (한국 또는 미국 상장사 1~2개 선별)",
-          "ticker": "종목코드 (예: 005930.KS 또는 NVDA)",
+          "ticker": "정확한 종목코드 (한국은 숫자6자리.KS 또는 .KQ, 미국은 알파벳. 모르면 빈 문자열)",
           "market": "KRX 또는 NYSE 또는 NASDAQ",
           "relevance": "high 또는 medium 또는 low",
           "reason": "[재료 신선도: 최상/상/보통]\\n[핵심 단기 수혜 이유] 이 뉴스가 오늘 당장 왜 이 종목의 매수세를 자극하는지 직관적으로 설명",

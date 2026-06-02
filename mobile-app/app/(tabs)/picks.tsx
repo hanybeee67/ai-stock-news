@@ -50,12 +50,12 @@ function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null)
   if (report && report.topNews) {
     report.topNews.forEach(news => {
       news.beneficiaryStocks?.slice(0, 2).forEach(stock => {
-        const id = `${news.id}-${stock.ticker}`;
-        const exists = updated.find(p => p.id === id);
+        // id는 news.id와 ticker 조합이지만, 중복 방지를 위해서는 ticker 단위로 검사
+        const exists = updated.find(p => p.ticker === stock.ticker);
         if (!exists) {
           // 오늘 새로 발견된 수혜주 추가
           updated.push({
-            id,
+            id: `${news.id}-${stock.ticker}`,
             stockName: stock.name,
             ticker: stock.ticker,
             pickedAt: kstNow.toISOString(), // 픽된 시점(오늘)
