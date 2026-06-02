@@ -142,7 +142,18 @@ export default function DashboardScreen() {
     setRefreshing(true);
     // 로컬 캐시 먼저 초기화 → 확실하게 서버 데이터를 가져오도록
     StorageService.clearTodayReportCache().then(() => {
-      ApiService.triggerAnalysis().then(() => { loadReport(true); });
+      ApiService.triggerAnalysis().then(() => {
+        setLoading(true);
+        ApiService.pollUntilReady(setServerProgress).then(data => {
+          if (data) setReport(data);
+          setLoading(false);
+          setRefreshing(false);
+        }).catch(() => {
+          setLoading(false);
+          setRefreshing(false);
+          loadReport(true);
+        });
+      });
     });
   }, []);
 
