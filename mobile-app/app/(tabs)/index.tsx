@@ -140,7 +140,10 @@ export default function DashboardScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    ApiService.triggerAnalysis().then(() => { loadReport(true); });
+    // 로컬 캐시 먼저 초기화 → 확실하게 서버 데이터를 가져오도록
+    StorageService.clearTodayReportCache().then(() => {
+      ApiService.triggerAnalysis().then(() => { loadReport(true); });
+    });
   }, []);
 
   const handleNewsPress = (news: NewsItem) => {

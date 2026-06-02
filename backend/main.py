@@ -219,7 +219,16 @@ async def get_status():
 
 @app.get("/api/daily-report")
 async def get_daily_report():
+    from zoneinfo import ZoneInfo
+    kst_now = datetime.now(ZoneInfo("Asia/Seoul"))
+    today_str = kst_now.strftime("%Y-%m-%d")
+
     report = db.load_today_report()
+
+    # 리포트가 있어도 오늘 날짜가 아니면 재분석 트리거
+    if report and report.get("date") != today_str:
+        logger.info(f"📅 기존 리포트는 {report.get('date')} 것 → 오늘({today_str}) 새 분석 필요")
+        report = None
 
     if not report:
         if not analyzer:

@@ -72,10 +72,10 @@ export const StorageService = {
   },
 
   /**
-   * 오늘의 리포트 불러오기 (v2.0 — 날짜 유효성 검증 포함)
+   * 오늘의 리포트 불러오기 (v3.0 — 날짜 + 최신성 검증)
    *
    * ✅ 오늘 KST 날짜와 report.date가 일치하는 경우만 반환.
-   * 어제 날짜 캐시가 남아 있어도 오늘 것으로 잘못 반환하는 버그 수정.
+   * ✅ generatedAt 기준 6시간 이상 지난 캐시는 null 반환 → 서버에서 새 데이터 강제 수신.
    */
   async getTodayReport(): Promise<DailyReport | null> {
     const todayKST = getTodayKST();
@@ -83,13 +83,34 @@ export const StorageService = {
 
     if (!report) return null;
 
-    // 날짜 불일치 → null 반환 (서버에서 새 데이터 가져오도록 유도)
+    // 날짜 불일치 → null 반환
     if (report.date !== todayKST) {
       console.log(`[Storage] ⚠ 캐시 날짜 불일치: 캐시=${report.date}, 오늘=${todayKST} → 무효화`);
       return null;
     }
 
+    // 6시간 이상 지난 캐시도 무효화 (매일 새 뉴스 수신 보장)
+    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+    if (report.generatedAt) {
+      const generatedAt = new Date(report.generatedAt).getTime();
+      const now = Date.now();
+      if (now - generatedAt > SIX_HOURS_MS) {
+        console.log(`[Storage] ⚠ 캐시가 6시간 이상 경과 (생성: ${report.generatedAt}) → 서버에서 새 데이터 수신`);
+        return null; // 서버에서 새로 받아오도록 강제
+      }
+    }
+
     return report;
+  },
+
+  /** 오늘 리포트 캐시 강제 초기화 */
+  async clearTodayReportCache(): Promise<void> {
+    const todayKST = getTodayKST();
+    await AsyncStorage.removeItem(KEYS.DAILY_REPORT(todayKST));
+    const index = await StorageService.getReportIndex();
+    const updated = index.filter(d => d !== todayKST);
+    await AsyncStorage.setItem(KEYS.REPORT_INDEX, JSON.stringify(updated));
+    console.log('[Storage] 🗑 오늘 캐시 초기화 완료');
   },
 
   /** 특정 날짜 리포트 불러오기 */
