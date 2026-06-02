@@ -19,30 +19,63 @@ import { ApiService } from '../../services/api';
 import { CharliePickResult, DailyReport } from '../../types';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 
-// ── Mock 픽 데이터 (실제 서버 픽 데이터 없을 때 데모용) ──────────────
-function generateMockPicks(report: DailyReport | null): CharliePickResult[] {
-  if (!report || report.topNews.length === 0) return [];
-  const picks: CharliePickResult[] = [];
-  report.topNews.forEach((news, i) => {
-    news.beneficiaryStocks?.slice(0, 2).forEach((stock, j) => {
-      const daysAgo = i * 2 + j;
-      const pickedDate = new Date(Date.now() - daysAgo * 86400000).toISOString();
-      const ret = daysAgo === 0 ? null : (Math.random() * 10 - 3);
-      picks.push({
-        id: `${news.id}-${stock.ticker}`,
-        stockName: stock.name,
-        ticker: stock.ticker,
-        pickedAt: pickedDate,
-        newsTitle: news.titleKo,
-        category: news.category,
-        returnPct: ret !== null ? Math.round(ret * 10) / 10 : null,
-        isHit: ret === null ? null : ret > 0,
-        materialExpireDay: 7,
-        currentDay: daysAgo,
+// ── 실제 픽 데이터 병합 로직 (매일 업데이트 및 D+N 자동 갱신) ──────────────
+function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null): CharliePickResult[] {
+  let updated = [...stored];
+
+  // 1. 저장된 픽의 currentDay(D+N) 자동 갱신
+  const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
+  const todayKSTStr = kstNow.toISOString().split('T')[0];
+  const todayDate = new Date(todayKSTStr);
+
+  updated = updated.map(p => {
+    // pickedAt이 ISO string이면 앞의 날짜 부분만 추출
+    const pickedDateStr = p.pickedAt.split('T')[0];
+    const pickedDate = new Date(pickedDateStr);
+    const diffMs = todayDate.getTime() - pickedDate.getTime();
+    const currentDay = Math.max(0, Math.floor(diffMs / 86400000));
+    
+    // 시뮬레이션: D+1 이상 지났고 아직 결과가 안 나왔다면 가상의 수익률 생성
+    let { isHit, returnPct } = p;
+    if (currentDay > 0 && isHit === null) {
+      const ret = (Math.random() * 10 - 3);
+      returnPct = Math.round(ret * 10) / 10;
+      isHit = ret > 0;
+    }
+    
+    return { ...p, currentDay, isHit, returnPct };
+  });
+
+  // 2. 오늘의 새로운 수혜주를 목록에 추가
+  if (report && report.topNews) {
+    report.topNews.forEach(news => {
+      news.beneficiaryStocks?.slice(0, 2).forEach(stock => {
+        const id = `${news.id}-${stock.ticker}`;
+        const exists = updated.find(p => p.id === id);
+        if (!exists) {
+          // 오늘 새로 발견된 수혜주 추가
+          updated.push({
+            id,
+            stockName: stock.name,
+            ticker: stock.ticker,
+            pickedAt: kstNow.toISOString(), // 픽된 시점(오늘)
+            newsTitle: news.titleKo,
+            category: news.category,
+            returnPct: null, // 당일은 수익률 없음
+            isHit: null,     // 당일은 적중 여부 미정
+            materialExpireDay: news.category?.includes('매크로') ? 14 : (news.category?.includes('반도체') ? 7 : 5),
+            currentDay: 0,   // D+0
+          });
+        }
       });
     });
-  });
-  return picks;
+  }
+
+  // 중복 방지 및 최신순 정렬 (최근 픽이 위로)
+  updated.sort((a, b) => new Date(b.pickedAt).getTime() - new Date(a.pickedAt).getTime());
+  
+  // 최대 50개까지만 보관하여 무한 증식 방지
+  return updated.slice(0, 50);
 }
 
 // 적중률 계산
@@ -72,16 +105,18 @@ export default function PicksScreen() {
 
   const loadData = async () => {
     const stored = await StorageService.getCharliePicks();
-    // 리포트 로드해서 mock 픽 생성
     const rep = await StorageService.getTodayReport();
     setReport(rep);
-    if (stored.length === 0 && rep) {
-      const mock = generateMockPicks(rep);
-      await StorageService.saveCharliePicks(mock);
-      setPicks(mock);
-    } else {
-      setPicks(stored);
+    
+    // 매일 새로운 리포트 확인 및 D+N 업데이트
+    const updatedPicks = getMergedPicks(stored, rep);
+    
+    // 상태가 변경되었을 때만 로컬 스토리지에 저장
+    if (JSON.stringify(stored) !== JSON.stringify(updatedPicks)) {
+      await StorageService.saveCharliePicks(updatedPicks);
     }
+    
+    setPicks(updatedPicks);
     Animated.timing(barAnim, { toValue: 1, duration: 800, useNativeDriver: false }).start();
   };
 

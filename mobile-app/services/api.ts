@@ -134,9 +134,12 @@ export const ApiService = {
       console.warn('[API] ⚠ 서버 연결 실패, Mock 데이터 사용');
     }
 
-    // 3. Fallback: Mock 데이터
-    const mockReport = { ...MOCK_DAILY_REPORT, date: today };
-    await StorageService.saveDailyReport(mockReport);
+    // 3. Fallback: Mock 데이터 (캐시 오염 방지를 위해 저장하지 않음)
+    const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
+    const todayKST = kstNow.toISOString().split('T')[0];
+    const mockReport = { ...MOCK_DAILY_REPORT, date: todayKST };
+    
+    // await StorageService.saveDailyReport(mockReport); // 삭제: 서버 실패 시 캐시 오염 방지
     return mockReport;
   },
 
