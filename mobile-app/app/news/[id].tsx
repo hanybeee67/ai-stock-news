@@ -392,6 +392,15 @@ function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (tick
               )}
             </View>
           )}
+          
+          {/* 상세 페이지 이동 버튼 */}
+          <TouchableOpacity 
+            style={styles.detailBtn} 
+            onPress={() => onPress(stock.ticker)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.detailBtnText}>🔍 {stock.name} 상세 정보 및 실시간 차트 보기</Text>
+          </TouchableOpacity>
         </View>
       )}
     </TouchableOpacity>
@@ -523,6 +532,8 @@ const styles = StyleSheet.create({
   returnCell: { alignItems: 'center', flex: 1 },
   returnLabel: { fontSize: 10, color: COLORS.textMuted, marginBottom: 2 },
   returnValue: { fontSize: FONTS.sm, fontWeight: FONTS.bold },
+  detailBtn: { marginTop: SPACING.md, backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: 12, alignItems: 'center' },
+  detailBtnText: { color: COLORS.textPrimary, fontSize: FONTS.sm, fontWeight: FONTS.bold },
 
   riskHeader: { flexDirection:'row', alignItems:'center', gap: SPACING.base, backgroundColor: COLORS.dangerBg, borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.base, borderWidth:1, borderColor: COLORS.danger + '40' },
   riskHeaderEmoji: { fontSize:28 },

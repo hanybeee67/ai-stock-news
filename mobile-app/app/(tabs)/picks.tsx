@@ -23,25 +23,54 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null): CharliePickResult[] {
   let updated = [...stored];
 
-  // [긴급 복구] 기존 스토리지에 잘못 저장된 오염된 데이터(환각 티커 및 중복) 청소
-  // 1. 이름과 티커가 명백히 불일치하는 과거 AI 환각 데이터 영구 삭제
-  updated = updated.filter(p => {
-    const name = p.stockName;
-    const ticker = p.ticker;
-    
-    // 삼성전자가 아닌데 005930인 경우 (한미반도체 오작동 원인)
-    if (ticker.includes('005930') && !name.includes('삼성')) return false;
-    
-    // GS건설이 아닌데 006360이거나, 동진쎄미켐인데 코스피(.KS)로 잘못 매핑된 경우 (GS건설 오작동 원인 등)
-    if (ticker.includes('006360') && !name.includes('GS')) return false;
-    if (name.includes('동진') && ticker.includes('006360')) return false;
-    
-    // 동진쎄미켐인데 티커가 잘못된 경우 (실제는 005290.KQ)
-    if (name.includes('동진') && !ticker.includes('005290')) return false;
-    if (name.includes('한미반도체') && !ticker.includes('042700')) return false;
+  // [긴급 복구] 기존 스토리지에 잘못 저장된 오염된 데이터(환각 티커 및 중복) 청소 및 치유
+  const tickerMap: Record<string, string> = {
+    '삼성전자': '005930.KS',
+    'SK하이닉스': '000660.KS',
+    '한미반도체': '042700.KS',
+    '동진쎄미켐': '005290.KQ',
+    'HMM': '011200.KS',
+    '현대차': '005380.KS',
+    '기아': '000270.KS',
+    'LG에너지솔루션': '373220.KS',
+    '셀트리온': '068270.KS',
+    'POSCO홀딩스': '005490.KS',
+    'NAVER': '035420.KS',
+    '카카오': '035720.KS',
+    '삼성SDI': '006400.KS',
+    'LG화학': '051910.KS',
+    '삼성물산': '028260.KS',
+    'KB금융': '105560.KS',
+    '신한지주': '055550.KS',
+    '포스코퓨처엠': '003670.KS',
+    '에코프로비엠': '247540.KQ',
+    '에코프로': '086520.KQ',
+    '엔켐': '348370.KQ',
+    '알테오젠': '196170.KQ',
+    'HLB': '028300.KQ',
+    'GS건설': '006360.KS',
+    '현대건설': '000720.KS',
+  };
 
-    return true;
-  });
+  updated = updated.map(p => {
+    let newTicker = p.ticker;
+    const name = p.stockName.replace(/\(주\)|주식회사|\s+/g, '');
+    
+    // 사전 매핑으로 티커 강제 보정 (이름 기준)
+    for (const [key, val] of Object.entries(tickerMap)) {
+      if (name.includes(key) || key.includes(name)) {
+        newTicker = val;
+        break;
+      }
+    }
+    
+    // 만약 사전에 없는 종목인데 티커가 명백한 환각(삼성전자 티커를 공유)인 경우...
+    if (newTicker.includes('005930') && !name.includes('삼성')) {
+       newTicker = ''; 
+    }
+    
+    return { ...p, ticker: newTicker };
+  }).filter(p => p.ticker !== ''); // 티커가 비어있는 완전한 쓰레기 데이터만 삭제
 
   // 2. 이미 저장된 데이터 중에서도 종목명 기준으로 중복 제거 (가장 최신 것만 남김)
   const uniqueMap = new Map<string, CharliePickResult>();

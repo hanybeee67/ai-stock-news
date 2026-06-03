@@ -292,16 +292,58 @@ class AIAnalyzer:
         """네이버 금융 검색 API를 통해 한국 종목의 정확한 6자리 티커(+ .KS/.KQ)를 반환"""
         import aiohttp
         import urllib.parse
-        url = f"https://ac.finance.naver.com/ac?q={urllib.parse.quote(name)}&q_enc=utf-8&st=111&r_format=json&r_enc=utf-8"
+        import re
+
+        # 1. 불필요한 접미사 제거
+        clean_name = re.sub(r'\(주\)|주식회사|\s+', '', name)
+
+        # 2. 하드코딩 사전 폴백 (주요 AI 환각 및 인기 종목)
+        fallback_dict = {
+            "삼성전자": "005930.KS",
+            "SK하이닉스": "000660.KS",
+            "한미반도체": "042700.KS",
+            "동진쎄미켐": "005290.KQ",
+            "HMM": "011200.KS",
+            "현대차": "005380.KS",
+            "기아": "000270.KS",
+            "LG에너지솔루션": "373220.KS",
+            "셀트리온": "068270.KS",
+            "POSCO홀딩스": "005490.KS",
+            "NAVER": "035420.KS",
+            "카카오": "035720.KS",
+            "삼성SDI": "006400.KS",
+            "LG화학": "051910.KS",
+            "삼성물산": "028260.KS",
+            "KB금융": "105560.KS",
+            "신한지주": "055550.KS",
+            "포스코퓨처엠": "003670.KS",
+            "에코프로비엠": "247540.KQ",
+            "에코프로": "086520.KQ",
+            "엔켐": "348370.KQ",
+            "알테오젠": "196170.KQ",
+            "HLB": "028300.KQ",
+            "GS건설": "006360.KS",
+            "현대건설": "000720.KS",
+        }
+        
+        for key, val in fallback_dict.items():
+            if key in clean_name or clean_name in key:
+                return val
+
+        url = f"https://ac.finance.naver.com/ac?q={urllib.parse.quote(clean_name)}&q_enc=utf-8&st=111&r_format=json&r_enc=utf-8"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as resp:
+                async with session.get(url, headers=headers, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         items = data.get('items', [[]])[0]
                         if items:
                             for item in items:
-                                if len(item) >= 3 and item[1] == name:
+                                if len(item) >= 3 and (item[1] == clean_name or item[1] == name):
                                     code, _, market = item[0], item[1], item[2]
                                     return f"{code}.KS" if market == 'KOSPI' else f"{code}.KQ"
                             # 정확히 일치하는 이름이 없으면 첫번째 결과 반환
