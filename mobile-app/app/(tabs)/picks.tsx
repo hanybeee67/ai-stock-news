@@ -56,15 +56,21 @@ function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null)
     let newTicker = p.ticker;
     const name = p.stockName.replace(/\(주\)|주식회사|\s+/g, '');
     
-    // 사전 매핑으로 티커 강제 보정 (이름 기준)
-    for (const [key, val] of Object.entries(tickerMap)) {
-      if (name.includes(key) || key.includes(name)) {
-        newTicker = val;
-        break;
+    // 1단계: 완전 일치 체크 (가장 우선순위 높음)
+    if (tickerMap[name]) {
+      newTicker = tickerMap[name];
+    } else {
+      // 2단계: 긴 키 우선으로 정렬하여 부분 일치 체크 (에코프로 vs 에코프로비엠 혼동 방지)
+      const sortedKeys = Object.keys(tickerMap).sort((a, b) => b.length - a.length);
+      for (const key of sortedKeys) {
+        if (name.includes(key) || key.includes(name)) {
+          newTicker = tickerMap[key];
+          break;
+        }
       }
     }
     
-    // 만약 사전에 없는 종목인데 티커가 명백한 환각(삼성전자 티커를 공유)인 경우...
+    // 만약 사전에 없는 종목인데 티커가 명백한 환각(삼성전자 티커를 공유)인 경우
     if (newTicker.includes('005930') && !name.includes('삼성')) {
        newTicker = ''; 
     }

@@ -31,7 +31,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: '오늘 브리핑',
+          title: '오늘의 뉴스',
           tabBarIcon: ({ focused }) => (
             <Text style={{ fontSize: focused ? 24 : 22, opacity: focused ? 1 : 0.6 }}>📊</Text>
           ),

@@ -136,7 +136,64 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => { loadReport(); return () => stopLoadingAnimation(); }, []);
+  // 앱 시작 시: 로컬 캐시를 먼저 보여주고, 백그라운드에서 서버 최신 데이터로 자동 갱신
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initLoad() {
+      setError(null);
+      startLoadingAnimation();
+
+      // 1단계: 로컬 캐시가 있으면 즉시 표시 (빠른 초기 렌더링)
+      const cached = await StorageService.getTodayReport();
+      if (cached && !cancelled) {
+        setReport(cached);
+        setLoading(false);
+        stopLoadingAnimation();
+        Animated.stagger(150, [
+          Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.timing(thermometerAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        ]).start();
+      }
+
+      // 2단계: 백그라운드에서 서버 최신 데이터 조용히 확인
+      try {
+        const fresh = await ApiService.fetchDailyReport(false);
+        if (fresh && !cancelled) {
+          // 날짜가 캐시보다 최신이거나 다를 때만 UI 업데이트
+          if (!cached || fresh.date !== cached.date || fresh.generatedAt !== cached.generatedAt) {
+            setReport(fresh);
+            console.log('[App] ✅ 백그라운드 갱신 완료:', fresh.date);
+          }
+        }
+      } catch (err: any) {
+        if (err?.message === 'analyzing') {
+          // 서버가 분석 중이면 조용히 폴링 (UI를 차단하지 않음)
+          ApiService.pollUntilReady((msg) => {
+            if (!cancelled) setServerProgress(msg);
+          }, 180, 8).then(data => {
+            if (data && !cancelled) {
+              setReport(data);
+              setServerProgress('');
+            }
+          });
+        }
+        // 그 외 에러는 캐시를 그대로 사용하므로 무시
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          stopLoadingAnimation();
+        }
+      }
+    }
+
+    initLoad();
+    return () => {
+      cancelled = true;
+      stopLoadingAnimation();
+    };
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
