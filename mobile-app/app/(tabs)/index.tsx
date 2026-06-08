@@ -136,7 +136,7 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  // 앱 시작 시: 로컬 캐시를 먼저 보여주고, 백그라운드에서 서버 최신 데이터로 자동 갱신
+  // 앱 시작: 캐시를 즉시 보여주고, 백그라운드에서 서버 최신 데이터 자동 갱신
   useEffect(() => {
     let cancelled = false;
 
@@ -155,31 +155,62 @@ export default function DashboardScreen() {
           Animated.timing(thermometerAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
           Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
         ]).start();
+
+        // 캐시가 있으면 백그라운드에서 조용히 서버 최신 확인 (실패해도 무관)
+        try {
+          const fresh = await ApiService.fetchDailyReport(false);
+          if (fresh && !cancelled) {
+            if (fresh.date !== cached.date || fresh.generatedAt !== cached.generatedAt) {
+              setReport(fresh);
+            }
+          }
+        } catch {
+          // 백그라운드 갱신 실패 시 캐시를 그대로 사용, 화면 유지
+        }
+        return; // 캐시 있으면 여기서 종료
       }
 
-      // 2단계: 백그라운드에서 서버 최신 데이터 조용히 확인
+      // 2단계: 캐시 없으면 서버에서 직접 (항상 결과 반환 보장 - mock 포함)
       try {
-        const fresh = await ApiService.fetchDailyReport(false);
-        if (fresh && !cancelled) {
-          // 날짜가 캐시보다 최신이거나 다를 때만 UI 업데이트
-          if (!cached || fresh.date !== cached.date || fresh.generatedAt !== cached.generatedAt) {
-            setReport(fresh);
-            console.log('[App] ✅ 백그라운드 갱신 완료:', fresh.date);
+        const data = await ApiService.fetchDailyReport(false);
+        if (!cancelled) {
+          if (data) {
+            setReport(data);
+            Animated.stagger(150, [
+              Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+              Animated.timing(thermometerAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+              Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+            ]).start();
+          } else {
+            setError('데이터를 불러오는 데 실패했습니다. 새로고침을 시도하세요.');
           }
         }
       } catch (err: any) {
-        if (err?.message === 'analyzing') {
-          // 서버가 분석 중이면 조용히 폴링 (UI를 차단하지 않음)
-          ApiService.pollUntilReady((msg) => {
-            if (!cancelled) setServerProgress(msg);
-          }, 180, 8).then(data => {
-            if (data && !cancelled) {
-              setReport(data);
-              setServerProgress('');
+        if (!cancelled) {
+          if (err?.message === 'analyzing') {
+            setServerProgress('🤖 AI가 분석 중입니다...');
+            try {
+              const data = await ApiService.pollUntilReady((msg) => {
+                if (!cancelled) setServerProgress(msg);
+              }, 180, 5);
+              if (data && !cancelled) {
+                setReport(data);
+                setServerProgress('');
+                Animated.stagger(150, [
+                  Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+                  Animated.timing(thermometerAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+                  Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+                ]).start();
+              } else if (!cancelled) {
+                setError('분석 완료를 기다리는 중 시간이 초과됐습니다. 잠시 후 새로고침해 주세요.');
+              }
+            } catch {
+              if (!cancelled) setError('데이터를 불러오는 데 실패했습니다. 새로고침을 시도하세요.');
             }
-          });
+          } else {
+            setError('데이터를 불러오는 데 실패했습니다. 새로고침을 시도하세요.');
+          }
         }
-        // 그 외 에러는 캐시를 그대로 사용하므로 무시
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -241,6 +272,27 @@ export default function DashboardScreen() {
             <View key={i} style={[styles.stepDot, i === loadingStep && styles.stepDotActive]} />
           ))}
         </View>
+      </View>
+    );
+  }
+
+  if (error && !report) {
+    return (
+      <View style={styles.loadingContainer}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.bgDeep} />
+        <Text style={{ fontSize: 48, marginBottom: SPACING.md }}>⚠️</Text>
+        <Text style={[styles.loadingText, { color: COLORS.textPrimary, textAlign: 'center', marginBottom: SPACING.sm }]}>
+          뉴스를 불러오지 못했습니다
+        </Text>
+        <Text style={[styles.loadingSubtext, { textAlign: 'center', marginBottom: SPACING.xl }]}>
+          {error}
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: COLORS.primary, paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md, borderRadius: RADIUS.md }}
+          onPress={() => { setError(null); setLoading(true); loadReport(true); }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: FONTS.base }}>🔄 다시 시도</Text>
+        </TouchableOpacity>
       </View>
     );
   }
