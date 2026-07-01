@@ -1,7 +1,7 @@
 // 📁 app/(tabs)/picks.tsx
-// 찰리 픽 결과 추적 (2순위) + 재료 소멸 알림 (3순위) + 뉴스 임팩트 타임라인 (4순위)
+// 오늘의 유망주 — 오늘 뉴스에서 AI가 선별한 수혜 종목만 표시
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,158 +10,78 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
-  Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StorageService } from '../../services/storage';
 import { ApiService } from '../../services/api';
-import { CharliePickResult, DailyReport } from '../../types';
+import { DailyReport } from '../../types';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 
-// ── 실제 픽 데이터 병합 로직 (매일 업데이트 및 D+N 자동 갱신) ──────────────
-function getMergedPicks(stored: CharliePickResult[], report: DailyReport | null): CharliePickResult[] {
-  let updated = [...stored];
-
-  // [긴급 복구] 기존 스토리지에 잘못 저장된 오염된 데이터(환각 티커 및 중복) 청소 및 치유
-  const tickerMap: Record<string, string> = {
-    '삼성전자': '005930.KS',
-    'SK하이닉스': '000660.KS',
-    '한미반도체': '042700.KS',
-    '동진쎄미켐': '005290.KQ',
-    'HMM': '011200.KS',
-    '현대차': '005380.KS',
-    '기아': '000270.KS',
-    'LG에너지솔루션': '373220.KS',
-    '셀트리온': '068270.KS',
-    'POSCO홀딩스': '005490.KS',
-    'NAVER': '035420.KS',
-    '카카오': '035720.KS',
-    '삼성SDI': '006400.KS',
-    'LG화학': '051910.KS',
-    '삼성물산': '028260.KS',
-    'KB금융': '105560.KS',
-    '신한지주': '055550.KS',
-    '포스코퓨처엠': '003670.KS',
-    '에코프로비엠': '247540.KQ',
-    '에코프로': '086520.KQ',
-    '엔켐': '348370.KQ',
-    '알테오젠': '196170.KQ',
-    'HLB': '028300.KQ',
-    'GS건설': '006360.KS',
-    '현대건설': '000720.KS',
-  };
-
-  updated = updated.map(p => {
-    let newTicker = p.ticker;
-    const name = p.stockName.replace(/\(주\)|주식회사|\s+/g, '');
-    
-    // 1단계: 완전 일치 체크 (가장 우선순위 높음)
-    if (tickerMap[name]) {
-      newTicker = tickerMap[name];
-    } else {
-      // 2단계: 긴 키 우선으로 정렬하여 부분 일치 체크 (에코프로 vs 에코프로비엠 혼동 방지)
-      const sortedKeys = Object.keys(tickerMap).sort((a, b) => b.length - a.length);
-      for (const key of sortedKeys) {
-        if (name.includes(key) || key.includes(name)) {
-          newTicker = tickerMap[key];
-          break;
-        }
-      }
-    }
-    
-    // 만약 사전에 없는 종목인데 티커가 명백한 환각(삼성전자 티커를 공유)인 경우
-    if (newTicker.includes('005930') && !name.includes('삼성')) {
-       newTicker = ''; 
-    }
-    
-    return { ...p, ticker: newTicker };
-  }).filter(p => p.ticker !== ''); // 티커가 비어있는 완전한 쓰레기 데이터만 삭제
-
-  // 2. 이미 저장된 데이터 중에서도 종목명 기준으로 중복 제거 (가장 최신 것만 남김)
-  const uniqueMap = new Map<string, CharliePickResult>();
-  // 최신순으로 정렬 후 Map에 넣어서 고유한 종목명만 유지
-  updated.sort((a, b) => new Date(b.pickedAt).getTime() - new Date(a.pickedAt).getTime());
-  updated.forEach(p => {
-    if (!uniqueMap.has(p.stockName)) {
-      uniqueMap.set(p.stockName, p);
-    }
-  });
-  updated = Array.from(uniqueMap.values());
-
-  // 1. 저장된 픽의 currentDay(D+N) 자동 갱신
+// ── 오늘 날짜 KST ───────────────────────────────────────────────────
+function getTodayKST(): string {
   const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
-  const todayKSTStr = kstNow.toISOString().split('T')[0];
-  const todayDate = new Date(todayKSTStr);
+  return kstNow.toISOString().split('T')[0];
+}
 
-  updated = updated.map(p => {
-    // pickedAt이 ISO string이면 앞의 날짜 부분만 추출
-    const pickedDateStr = p.pickedAt.split('T')[0];
-    const pickedDate = new Date(pickedDateStr);
-    const diffMs = todayDate.getTime() - pickedDate.getTime();
-    const currentDay = Math.max(0, Math.floor(diffMs / 86400000));
-    
-    // 시뮬레이션: D+1 이상 지났고 아직 결과가 안 나왔다면 가상의 수익률 생성
-    let { isHit, returnPct } = p;
-    if (currentDay > 0 && isHit === null) {
-      const ret = (Math.random() * 10 - 3);
-      returnPct = Math.round(ret * 10) / 10;
-      isHit = ret > 0;
-    }
-    
-    return { ...p, currentDay, isHit, returnPct };
-  });
+// ── 오늘 리포트에서 수혜주 추출 ─────────────────────────────────────
+interface TodayPick {
+  key: string;
+  stockName: string;
+  ticker: string;
+  market: string;
+  reason: string;
+  relevance: string;
+  sector: string;
+  newsTitle: string;
+  newsCategory: string;
+  marketImpact: string;
+}
 
-  // 2. 오늘의 새로운 수혜주를 목록에 추가
-  if (report && report.topNews) {
-    report.topNews.forEach(news => {
-      news.beneficiaryStocks?.slice(0, 2).forEach(stock => {
-        // id는 news.id와 ticker 조합이지만, 중복 방지를 위해서는 ticker 단위로 검사
-        const exists = updated.find(p => p.ticker === stock.ticker);
-        if (!exists) {
-          // 오늘 새로 발견된 수혜주 추가
-          updated.push({
-            id: `${news.id}-${stock.ticker}`,
-            stockName: stock.name,
-            ticker: stock.ticker,
-            pickedAt: kstNow.toISOString(), // 픽된 시점(오늘)
-            newsTitle: news.titleKo,
-            category: news.category,
-            returnPct: null, // 당일은 수익률 없음
-            isHit: null,     // 당일은 적중 여부 미정
-            materialExpireDay: news.category?.includes('매크로') ? 14 : (news.category?.includes('반도체') ? 7 : 5),
-            currentDay: 0,   // D+0
-          });
-        }
+function extractTodayPicks(report: DailyReport | null): TodayPick[] {
+  if (!report) return [];
+  const picks: TodayPick[] = [];
+  const seen = new Set<string>();
+  for (const news of report.topNews ?? []) {
+    for (const stock of news.beneficiaryStocks ?? []) {
+      const key = stock.ticker || stock.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picks.push({
+        key,
+        stockName: stock.name,
+        ticker: stock.ticker ?? '',
+        market: stock.market ?? '',
+        reason: stock.reason ?? '',
+        relevance: stock.relevance ?? 'medium',
+        sector: stock.sector ?? '',
+        newsTitle: news.titleKo ?? news.title ?? '',
+        newsCategory: news.category ?? '',
+        marketImpact: news.marketImpact ?? 'neutral',
       });
-    });
+    }
   }
-
-  // 중복 방지 및 최신순 정렬 (최근 픽이 위로)
-  updated.sort((a, b) => new Date(b.pickedAt).getTime() - new Date(a.pickedAt).getTime());
-  
-  // 최대 50개까지만 보관하여 무한 증식 방지
-  return updated.slice(0, 50);
+  return picks;
 }
 
-// 적중률 계산
-function calcAccuracy(picks: CharliePickResult[]): number {
-  const settled = picks.filter(p => p.isHit !== null);
-  if (settled.length === 0) return 0;
-  const hits = settled.filter(p => p.isHit === true).length;
-  return Math.round((hits / settled.length) * 100);
+function relevanceColor(r: string): string {
+  if (r === 'high') return COLORS.accentGreen;
+  if (r === 'medium') return COLORS.accentGold;
+  return COLORS.textMuted;
 }
 
-// D+N 표시
-function formatDay(n: number): string {
-  return `D+${n}`;
+function impactColor(impact: string): string {
+  if (impact === 'bullish') return COLORS.accentGreen;
+  if (impact === 'bearish') return COLORS.accentRed;
+  return COLORS.accentGold;
 }
 
+// ── 메인 컴포넌트 ───────────────────────────────────────────────────
 export default function PicksScreen() {
-  const [picks, setPicks] = useState<CharliePickResult[]>([]);
-  const [activeTab, setActiveTab] = useState<'picks' | 'material' | 'timeline'>('picks');
   const [report, setReport] = useState<DailyReport | null>(null);
-  const barAnim = useState(new Animated.Value(0))[0];
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -170,31 +90,35 @@ export default function PicksScreen() {
   );
 
   const loadData = async () => {
-    const stored = await StorageService.getCharliePicks();
-    const rep = await StorageService.getTodayReport();
-    setReport(rep);
-    
-    // 매일 새로운 리포트 확인 및 D+N 업데이트
-    const updatedPicks = getMergedPicks(stored, rep);
-    
-    // 상태가 변경되었을 때만 로컬 스토리지에 저장
-    if (JSON.stringify(stored) !== JSON.stringify(updatedPicks)) {
-      await StorageService.saveCharliePicks(updatedPicks);
+    setLoading(true);
+    try {
+      let rep = await StorageService.getTodayReport();
+      if (!rep) {
+        rep = await ApiService.fetchDailyReport(false).catch(() => null);
+      }
+      setReport(rep);
+    } finally {
+      setLoading(false);
     }
-    
-    setPicks(updatedPicks);
-    Animated.timing(barAnim, { toValue: 1, duration: 800, useNativeDriver: false }).start();
   };
 
-  const accuracy = calcAccuracy(picks);
-  const settled = picks.filter(p => p.isHit !== null);
-  const pending = picks.filter(p => p.isHit === null);
-  // 재료 소멸 임박 (D+5 이상 && 아직 유효)
-  const expiring = picks.filter(p => p.currentDay >= p.materialExpireDay - 2 && p.isHit === null);
-  // 임팩트 타임라인 (오늘 뉴스 기반)
-  const timelineNews = report?.topNews ?? [];
+  const todayPicks = extractTodayPicks(report);
+  const todayKST = getTodayKST();
+  const highPicks = todayPicks.filter(p => p.relevance === 'high');
+  const otherPicks = todayPicks.filter(p => p.relevance !== 'high');
+  const newsCount = report?.topNews?.length ?? 0;
 
-  const accuracyColor = accuracy >= 70 ? COLORS.accentGreen : accuracy >= 50 ? COLORS.accentGold : COLORS.accentRed;
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="light-content" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ color: COLORS.textSecondary, fontSize: FONTS.sm, marginTop: SPACING.md }}>
+          오늘의 유망주를 불러오는 중...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -202,96 +126,77 @@ export default function PicksScreen() {
 
       {/* ── 헤더 ── */}
       <LinearGradient colors={['#0D1240', COLORS.bgBase]} style={styles.header}>
-        <Text style={styles.headerTitle}>📅 오늘의 픽 트래커</Text>
-        <Text style={styles.headerSubtitle}>수혜주 결과 · 재료 소멸 · 뉴스 유효기간</Text>
+        <Text style={styles.headerTitle}>🎯 오늘의 유망주</Text>
+        <Text style={styles.headerSubtitle}>
+          {todayKST} · AI가 오늘 뉴스에서 선별한 수혜 종목
+        </Text>
 
-        {/* 이달 적중률 요약 */}
-        <View style={styles.accuracyBox}>
-          <View style={[styles.accuracyBadge, { backgroundColor: accuracyColor + '20', borderColor: accuracyColor + '50' }]}>
-            <Text style={[styles.accuracyPct, { color: accuracyColor }]}>{accuracy}%</Text>
-            <Text style={styles.accuracyLabel}>이번달 적중률</Text>
+        {/* 요약 배지 */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryChip}>
+            <Text style={styles.summaryChipNum}>{todayPicks.length}</Text>
+            <Text style={styles.summaryChipLabel}>오늘 유망주</Text>
           </View>
-          <View style={styles.accuracyStats}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{settled.filter(p => p.isHit).length}</Text>
-              <Text style={styles.statLabel}>✅ 적중</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{settled.filter(p => !p.isHit).length}</Text>
-              <Text style={styles.statLabel}>❌ 미적중</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{pending.length}</Text>
-              <Text style={styles.statLabel}>⏳ 진행중</Text>
-            </View>
+          <View style={[styles.summaryChip, { borderColor: COLORS.accentGreen + '50' }]}>
+            <Text style={[styles.summaryChipNum, { color: COLORS.accentGreen }]}>{highPicks.length}</Text>
+            <Text style={styles.summaryChipLabel}>고관련성</Text>
           </View>
-        </View>
-
-        {/* 서브 탭 */}
-        <View style={styles.subTabs}>
-          {[
-            { key: 'picks', label: '픽 결과', icon: '📊' },
-            { key: 'material', label: '재료 소멸', icon: '🔔' },
-            { key: 'timeline', label: '뉴스 타임라인', icon: '📰' },
-          ].map(tab => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.subTab, activeTab === tab.key && styles.subTabActive]}
-              onPress={() => setActiveTab(tab.key as any)}
-            >
-              <Text style={styles.subTabIcon}>{tab.icon}</Text>
-              <Text style={[styles.subTabText, activeTab === tab.key && styles.subTabTextActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          <View style={[styles.summaryChip, { borderColor: COLORS.primary + '50' }]}>
+            <Text style={[styles.summaryChipNum, { color: COLORS.primary }]}>{newsCount}</Text>
+            <Text style={styles.summaryChipLabel}>분석 뉴스</Text>
+          </View>
         </View>
       </LinearGradient>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {todayPicks.length === 0 ? (
+          <EmptyState
+            emoji="📊"
+            title="오늘의 유망주가 없습니다"
+            desc={'홈 화면에서 당겨서 새로고침 후\n다시 확인해 주세요'}
+          />
+        ) : (
+          <>
+            {/* 고관련성 종목 */}
+            {highPicks.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>⭐ 핵심 수혜주</Text>
+                  <Text style={styles.sectionDesc}>오늘 뉴스와 직접 연관된 주목 종목</Text>
+                </View>
+                {highPicks.map(pick => (
+                  <TodayPickCard
+                    key={pick.key}
+                    pick={pick}
+                    expanded={expanded}
+                    setExpanded={setExpanded}
+                  />
+                ))}
+              </>
+            )}
 
-        {/* ── 탭 1: 픽 결과 (2순위) ── */}
-        {activeTab === 'picks' && (
-          <View>
-            {picks.length === 0 ? (
-              <EmptyState emoji="📊" title="아직 픽 기록이 없어요" desc="뉴스 상세에서 수혜주를 확인하면{'\n'}여기에 결과가 쌓입니다" />
-            ) : (
-              picks.map(pick => <PickCard key={pick.id} pick={pick} />)
+            {/* 중/저관련성 종목 */}
+            {otherPicks.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>📈 관련 수혜주</Text>
+                  <Text style={styles.sectionDesc}>간접 수혜 가능성이 있는 종목</Text>
+                </View>
+                {otherPicks.map(pick => (
+                  <TodayPickCard
+                    key={pick.key}
+                    pick={pick}
+                    expanded={expanded}
+                    setExpanded={setExpanded}
+                  />
+                ))}
+              </>
             )}
-          </View>
-        )}
-
-        {/* ── 탭 2: 재료 소멸 알림 (3순위) ── */}
-        {activeTab === 'material' && (
-          <View>
-            {expiring.length > 0 && (
-              <View style={styles.alertBanner}>
-                <Text style={styles.alertBannerText}>🔔 재료 소멸 임박 {expiring.length}건</Text>
-                <Text style={styles.alertBannerSub}>수익 실현을 고려하세요</Text>
-              </View>
-            )}
-            {picks
-              .filter(p => p.isHit === null)
-              .sort((a, b) => b.currentDay - a.currentDay)
-              .map(pick => <MaterialCard key={pick.id} pick={pick} />)
-            }
-            {picks.filter(p => p.isHit === null).length === 0 && (
-              <EmptyState emoji="🔔" title="모니터링 중인 재료 없음" desc="진행중인 픽이 생기면{'\n'}여기서 재료 소멸을 추적합니다" />
-            )}
-          </View>
-        )}
-
-        {/* ── 탭 3: 뉴스 임팩트 타임라인 (4순위) ── */}
-        {activeTab === 'timeline' && (
-          <View>
-            {timelineNews.length === 0 ? (
-              <EmptyState emoji="📰" title="오늘 뉴스 없음" desc="메인 탭에서 새로고침 후{'\n'}다시 확인하세요" />
-            ) : (
-              timelineNews.map(news => <TimelineCard key={news.id} news={news} />)
-            )}
-          </View>
+          </>
         )}
 
         <View style={{ height: SPACING.xxxl }} />
@@ -300,146 +205,108 @@ export default function PicksScreen() {
   );
 }
 
-// ── 픽 결과 카드 ──────────────────────────────────────────────────────
-function PickCard({ pick }: { pick: CharliePickResult }) {
-  const isHit = pick.isHit;
-  const pending = pick.isHit === null;
-  const ret = pick.returnPct;
-  const retColor = ret === null ? COLORS.textMuted : ret > 0 ? COLORS.accentGreen : COLORS.accentRed;
-  const statusIcon = pending ? '⏳' : isHit ? '✅' : '❌';
+// ── 유망주 카드 컴포넌트 ─────────────────────────────────────────────
+function TodayPickCard({
+  pick,
+  expanded,
+  setExpanded,
+}: {
+  pick: TodayPick;
+  expanded: string | null;
+  setExpanded: (k: string | null) => void;
+}) {
+  const isOpen = expanded === pick.key;
+  const relColor = relevanceColor(pick.relevance);
+  const impColor = impactColor(pick.marketImpact);
+  const relLabel =
+    pick.relevance === 'high' ? '고관련' : pick.relevance === 'medium' ? '중관련' : '저관련';
+  const impactLabel =
+    pick.marketImpact === 'bullish'
+      ? '📈 상승 재료'
+      : pick.marketImpact === 'bearish'
+      ? '📉 하락 재료'
+      : '↔ 중립';
 
   return (
-    <TouchableOpacity style={styles.pickCard} onPress={() => router.push(`/stock/${pick.ticker}`)} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.pickCard}
+      onPress={() => setExpanded(isOpen ? null : pick.key)}
+      activeOpacity={0.85}
+    >
+      {/* 상단: 종목명 + 배지 */}
       <View style={styles.pickCardHeader}>
-        <View style={styles.pickStockInfo}>
-          <Text style={styles.pickStockName}>{pick.stockName}</Text>
-          <Text style={styles.pickTicker}>{pick.ticker}</Text>
-        </View>
-        <View style={styles.pickResultBox}>
-          {ret !== null && (
-            <Text style={[styles.pickReturn, { color: retColor }]}>
-              {ret > 0 ? '+' : ''}{ret}%
-            </Text>
-          )}
-          <Text style={styles.pickStatus}>{statusIcon}</Text>
-        </View>
-      </View>
-      <Text style={styles.pickNewsTitle} numberOfLines={1}>📰 {pick.newsTitle}</Text>
-      <View style={styles.pickMeta}>
-        <View style={[styles.pickCatChip, { backgroundColor: COLORS.primary + '20' }]}>
-          <Text style={styles.pickCatText}>{pick.category}</Text>
-        </View>
-        <Text style={styles.pickDayText}>{formatDay(pick.currentDay)} 경과</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// ── 재료 소멸 카드 ────────────────────────────────────────────────────
-function MaterialCard({ pick }: { pick: CharliePickResult }) {
-  const progress = Math.min(pick.currentDay / pick.materialExpireDay, 1);
-  const daysLeft = pick.materialExpireDay - pick.currentDay;
-  const isExpiring = daysLeft <= 2;
-  const barColor = isExpiring ? COLORS.accentRed : daysLeft <= 4 ? COLORS.accentGold : COLORS.accentGreen;
-
-  return (
-    <TouchableOpacity style={[styles.materialCard, isExpiring && styles.materialCardExpiring]} onPress={() => router.push(`/stock/${pick.ticker}`)} activeOpacity={0.7}>
-      {isExpiring && (
-        <View style={styles.expiringBadge}>
-          <Text style={styles.expiringBadgeText}>🔔 소멸 임박</Text>
-        </View>
-      )}
-      <View style={styles.materialHeader}>
-        <Text style={styles.materialStockName}>{pick.stockName}</Text>
-        <Text style={[styles.materialDaysLeft, { color: barColor }]}>
-          {daysLeft <= 0 ? '소멸' : `D+${pick.currentDay} / D+${pick.materialExpireDay}`}
-        </Text>
-      </View>
-
-      {/* 타임라인 바 */}
-      <View style={styles.materialBarBg}>
-        <View style={[styles.materialBarFill, { width: `${progress * 100}%` as any, backgroundColor: barColor }]} />
-        <View style={[styles.materialBarDot, { left: `${progress * 100}%` as any, backgroundColor: barColor }]} />
-      </View>
-      <View style={styles.materialBarLabels}>
-        <Text style={styles.materialBarLabel}>발표 D+0</Text>
-        <Text style={styles.materialBarLabel}>D+{Math.floor(pick.materialExpireDay / 2)}</Text>
-        <Text style={styles.materialBarLabel}>소멸 D+{pick.materialExpireDay}</Text>
-      </View>
-
-      <Text style={styles.materialNewsTitle} numberOfLines={1}>📰 {pick.newsTitle}</Text>
-
-      {isExpiring && (
-        <View style={styles.materialAlert}>
-          <Text style={styles.materialAlertText}>
-            ⚡ {pick.category} 재료 {formatDay(pick.currentDay)}째 → 재료 소멸 임박. 수익 실현 고려하세요.
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// ── 뉴스 임팩트 타임라인 카드 ─────────────────────────────────────────
-function TimelineCard({ news }: { news: any }) {
-  const publishedAt = news.publishedAt ? new Date(news.publishedAt) : new Date();
-  const now = new Date();
-  const diffMs = now.getTime() - publishedAt.getTime();
-  const daysPassed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  // 카테고리별 유효기간 추정
-  const expireDays = news.category?.includes('매크로') ? 14 :
-    news.category?.includes('반도체') ? 7 :
-    news.category?.includes('바이오') ? 10 : 7;
-  const progress = Math.min(daysPassed / expireDays, 1);
-  const daysLeft = Math.max(expireDays - daysPassed, 0);
-  const isValid = daysLeft > 0;
-  const statusColor = isValid ? (daysLeft > 3 ? COLORS.accentGreen : COLORS.accentGold) : COLORS.textMuted;
-
-  return (
-    <View style={styles.timelineCard}>
-      <View style={styles.timelineHeader}>
-        <Text style={styles.timelineTitle} numberOfLines={2}>{news.titleKo}</Text>
-        <View style={[styles.timelineStatus, { backgroundColor: statusColor + '20', borderColor: statusColor + '50' }]}>
-          <Text style={[styles.timelineStatusText, { color: statusColor }]}>
-            {isValid ? '🟢 유효' : '⚫ 소멸'}
-          </Text>
-        </View>
-      </View>
-
-      {/* 타임라인 */}
-      <View style={styles.timelineBarRow}>
-        <Text style={styles.timelineBarLabel}>발표</Text>
-        <View style={styles.timelineBarBg}>
-          <View style={[styles.timelineBarFill, { width: `${progress * 100}%` as any }]} />
-        </View>
-        <Text style={styles.timelineBarLabel}>소멸</Text>
-      </View>
-
-      <View style={styles.timelineMeta}>
-        <Text style={styles.timelineDay}>현재 {formatDay(daysPassed)}</Text>
-        <Text style={[styles.timelineDaysLeft, { color: statusColor }]}>
-          {isValid ? `→ 아직 유효 (${daysLeft}일 남음)` : '→ 재료 소멸'}
-        </Text>
-      </View>
-
-      <View style={styles.timelinePoints}>
-        {[0, Math.floor(expireDays / 2), expireDays].map(d => (
-          <View key={d} style={[styles.timelinePoint, daysPassed >= d && styles.timelinePointActive]}>
-            <Text style={styles.timelinePointText}>D+{d}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={styles.pickNameRow}>
+            <Text style={styles.pickStockName}>{pick.stockName}</Text>
+            <View
+              style={[
+                styles.relBadge,
+                { backgroundColor: relColor + '20', borderColor: relColor + '50' },
+              ]}
+            >
+              <Text style={[styles.relBadgeText, { color: relColor }]}>{relLabel}</Text>
+            </View>
           </View>
-        ))}
+          <Text style={styles.pickTicker}>
+            {pick.ticker ? pick.ticker : '티커 미확인'}{pick.market ? ` · ${pick.market}` : ''}
+          </Text>
+        </View>
+        <View style={[styles.impactBadge, { backgroundColor: impColor + '18' }]}>
+          <Text style={[styles.impactText, { color: impColor }]}>{impactLabel}</Text>
+        </View>
       </View>
 
-      <View style={styles.timelineCat}>
-        <Text style={styles.timelineCatText}>{news.category}</Text>
-        <Text style={styles.timelineSrc}>📡 {news.source}</Text>
+      {/* 연관 뉴스 제목 */}
+      <Text style={styles.pickNewsTitle} numberOfLines={1}>
+        📰 {pick.newsTitle}
+      </Text>
+
+      {/* 카테고리 · 섹터 · 펼치기 */}
+      <View style={styles.pickMeta}>
+        {pick.newsCategory ? (
+          <View style={[styles.catChip, { backgroundColor: COLORS.primary + '20' }]}>
+            <Text style={styles.catChipText}>{pick.newsCategory}</Text>
+          </View>
+        ) : null}
+        {pick.sector ? (
+          <View style={[styles.catChip, { backgroundColor: COLORS.bgSurface }]}>
+            <Text style={styles.catChipText}>{pick.sector}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.expandHint}>{isOpen ? '▲ 닫기' : '▼ 수혜 이유'}</Text>
       </View>
-    </View>
+
+      {/* 펼쳐진 수혜 이유 + 시세 버튼 */}
+      {isOpen && (
+        <View style={styles.reasonBox}>
+          <Text style={styles.reasonText}>{pick.reason || '분석 정보 없음'}</Text>
+          {pick.ticker ? (
+            <TouchableOpacity
+              style={styles.stockDetailBtn}
+              onPress={() => router.push(`/stock/${pick.ticker}`)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.stockDetailBtnText}>
+                📊 {pick.stockName} 실시간 시세 보기
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
-// ── 빈 상태 ──────────────────────────────────────────────────────────
-function EmptyState({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+// ── 빈 상태 ─────────────────────────────────────────────────────────
+function EmptyState({
+  emoji,
+  title,
+  desc,
+}: {
+  emoji: string;
+  title: string;
+  desc: string;
+}) {
   return (
     <View style={styles.emptyState}>
       <Text style={styles.emptyEmoji}>{emoji}</Text>
@@ -449,97 +316,200 @@ function EmptyState({ emoji, title, desc }: { emoji: string; title: string; desc
   );
 }
 
+// ── 스타일 ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgBase },
 
-  // ── 헤더 ──
-  header: { paddingTop: Platform.OS === 'ios' ? 45 : 20, paddingBottom: 0 },
-  headerTitle: { fontSize: FONTS.xl, fontWeight: FONTS.extrabold, color: COLORS.textPrimary, paddingHorizontal: SPACING.base },
-  headerSubtitle: { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: 2, paddingHorizontal: SPACING.base },
+  // 헤더
+  header: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 24,
+    paddingBottom: SPACING.base,
+    paddingHorizontal: SPACING.base,
+  },
+  headerTitle: {
+    fontSize: FONTS.xl,
+    fontWeight: FONTS.extrabold,
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+  },
+  headerSubtitle: {
+    fontSize: FONTS.sm,
+    color: COLORS.textMuted,
+    marginBottom: SPACING.base,
+  },
 
-  // ── 적중률 박스 ──
-  accuracyBox: { flexDirection: 'row', alignItems: 'center', gap: SPACING.base, marginHorizontal: SPACING.base, marginTop: SPACING.sm, backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, padding: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderCard },
-  accuracyBadge: { alignItems: 'center', paddingHorizontal: SPACING.base, paddingVertical: SPACING.xs, borderRadius: RADIUS.lg, borderWidth: 1, minWidth: 70 },
-  accuracyPct: { fontSize: FONTS.xxl, fontWeight: FONTS.black },
-  accuracyLabel: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
-  accuracyStats: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
-  statItem: { alignItems: 'center', gap: 2 },
-  statNum: { fontSize: FONTS.xl, fontWeight: FONTS.bold, color: COLORS.textPrimary },
-  statLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
-  statDivider: { width: 1, height: 30, backgroundColor: COLORS.borderCard },
-
-  // ── 서브 탭 ──
-  subTabs: { flexDirection: 'row', marginTop: SPACING.base, borderTopWidth: 1, borderTopColor: COLORS.borderCard },
-  subTab: { flex: 1, alignItems: 'center', paddingVertical: SPACING.sm, gap: 2, opacity: 0.5 },
-  subTabActive: { opacity: 1, borderBottomWidth: 2, borderBottomColor: COLORS.primary },
-  subTabIcon: { fontSize: 16 },
-  subTabText: { fontSize: 11, color: COLORS.textMuted, fontWeight: FONTS.medium },
-  subTabTextActive: { color: COLORS.primary, fontWeight: FONTS.bold },
+  // 요약 배지 행
+  summaryRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  summaryChip: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.borderCard,
+  },
+  summaryChipNum: {
+    fontSize: FONTS.xl,
+    fontWeight: FONTS.black,
+    color: COLORS.textPrimary,
+  },
+  summaryChipLabel: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
 
   scroll: { flex: 1 },
-  scrollContent: { padding: SPACING.base },
+  scrollContent: { padding: SPACING.base, paddingTop: SPACING.md },
 
-  // ── 픽 카드 ──
-  pickCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: SPACING.base, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderCard },
-  pickCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.xs },
-  pickStockInfo: {},
-  pickStockName: { fontSize: FONTS.md, fontWeight: FONTS.bold, color: COLORS.textPrimary },
-  pickTicker: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 1 },
-  pickResultBox: { alignItems: 'flex-end', gap: 2 },
-  pickReturn: { fontSize: FONTS.lg, fontWeight: FONTS.extrabold },
-  pickStatus: { fontSize: 18 },
-  pickNewsTitle: { fontSize: FONTS.xs, color: COLORS.textMuted, marginBottom: SPACING.sm },
-  pickMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  pickCatChip: { paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: RADIUS.full },
-  pickCatText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: FONTS.semibold },
-  pickDayText: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  // 섹션 헤더
+  sectionHeader: {
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  sectionTitle: {
+    fontSize: FONTS.md,
+    fontWeight: FONTS.bold,
+    color: COLORS.textPrimary,
+  },
+  sectionDesc: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
 
-  // ── 재료 소멸 카드 ──
-  materialCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: SPACING.base, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderCard },
-  materialCardExpiring: { borderColor: COLORS.accentRed + '60', backgroundColor: COLORS.accentRed + '08' },
-  expiringBadge: { backgroundColor: COLORS.accentRed + '20', paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: RADIUS.full, alignSelf: 'flex-start', marginBottom: SPACING.sm },
-  expiringBadgeText: { fontSize: FONTS.xs, color: COLORS.accentRed, fontWeight: FONTS.bold },
-  materialHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.sm },
-  materialStockName: { fontSize: FONTS.md, fontWeight: FONTS.bold, color: COLORS.textPrimary },
-  materialDaysLeft: { fontSize: FONTS.sm, fontWeight: FONTS.semibold },
-  materialBarBg: { height: 6, backgroundColor: COLORS.bgSurface, borderRadius: 3, marginBottom: 4, position: 'relative' },
-  materialBarFill: { height: 6, borderRadius: 3 },
-  materialBarDot: { position: 'absolute', top: -3, width: 12, height: 12, borderRadius: 6, marginLeft: -6 },
-  materialBarLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.sm },
-  materialBarLabel: { fontSize: 10, color: COLORS.textMuted },
-  materialNewsTitle: { fontSize: FONTS.xs, color: COLORS.textMuted, marginBottom: SPACING.xs },
-  materialAlert: { backgroundColor: COLORS.accentRed + '15', borderRadius: RADIUS.md, padding: SPACING.sm, marginTop: SPACING.sm },
-  materialAlertText: { fontSize: FONTS.xs, color: COLORS.accentRed, lineHeight: 16 },
+  // 픽 카드
+  pickCard: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.base,
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.borderCard,
+  },
+  pickCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  pickNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    flexWrap: 'wrap',
+  },
+  pickStockName: {
+    fontSize: FONTS.md,
+    fontWeight: FONTS.bold,
+    color: COLORS.textPrimary,
+  },
+  relBadge: {
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  relBadgeText: {
+    fontSize: 10,
+    fontWeight: FONTS.bold,
+  },
+  pickTicker: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  impactBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.md,
+    alignSelf: 'flex-start',
+  },
+  impactText: {
+    fontSize: FONTS.xs,
+    fontWeight: FONTS.semibold,
+  },
 
-  // ── 타임라인 카드 ──
-  timelineCard: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.xl, padding: SPACING.base, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.borderCard },
-  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: SPACING.sm, gap: SPACING.sm },
-  timelineTitle: { flex: 1, fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.textPrimary, lineHeight: 18 },
-  timelineStatus: { paddingHorizontal: SPACING.sm, paddingVertical: 3, borderRadius: RADIUS.full, borderWidth: 1 },
-  timelineStatusText: { fontSize: FONTS.xs, fontWeight: FONTS.bold },
-  timelineBarRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.xs },
-  timelineBarLabel: { fontSize: 10, color: COLORS.textMuted, width: 28 },
-  timelineBarBg: { flex: 1, height: 6, backgroundColor: COLORS.bgSurface, borderRadius: 3 },
-  timelineBarFill: { height: 6, borderRadius: 3, backgroundColor: COLORS.primary },
-  timelineMeta: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.sm },
-  timelineDay: { fontSize: FONTS.xs, color: COLORS.textMuted },
-  timelineDaysLeft: { fontSize: FONTS.xs, fontWeight: FONTS.semibold },
-  timelinePoints: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.sm },
-  timelinePoint: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.sm, backgroundColor: COLORS.bgSurface },
-  timelinePointActive: { backgroundColor: COLORS.primary + '30' },
-  timelinePointText: { fontSize: 10, color: COLORS.textMuted },
-  timelineCat: { flexDirection: 'row', justifyContent: 'space-between' },
-  timelineCatText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: FONTS.semibold },
-  timelineSrc: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  // 뉴스 제목
+  pickNewsTitle: {
+    fontSize: FONTS.xs,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+    lineHeight: 16,
+  },
 
-  // ── 알림 배너 ──
-  alertBanner: { backgroundColor: COLORS.accentRed + '15', borderRadius: RADIUS.lg, padding: SPACING.base, marginBottom: SPACING.base, borderWidth: 1, borderColor: COLORS.accentRed + '40' },
-  alertBannerText: { fontSize: FONTS.md, color: COLORS.accentRed, fontWeight: FONTS.bold },
-  alertBannerSub: { fontSize: FONTS.sm, color: COLORS.accentRed + 'AA', marginTop: 2 },
+  // 메타 행
+  pickMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    flexWrap: 'wrap',
+  },
+  catChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  catChipText: {
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: FONTS.semibold,
+  },
+  expandHint: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginLeft: 'auto',
+  },
 
-  // ── 빈 상태 ──
-  emptyState: { alignItems: 'center', paddingVertical: SPACING.section, gap: SPACING.sm },
+  // 수혜 이유 박스
+  reasonBox: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.bgSurface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+  },
+  reasonText: {
+    fontSize: FONTS.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  stockDetailBtn: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  stockDetailBtnText: {
+    fontSize: FONTS.sm,
+    color: '#fff',
+    fontWeight: FONTS.bold,
+  },
+
+  // 빈 상태
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: SPACING.section,
+    gap: SPACING.sm,
+  },
   emptyEmoji: { fontSize: 52 },
-  emptyTitle: { fontSize: FONTS.lg, fontWeight: FONTS.bold, color: COLORS.textPrimary },
-  emptyDesc: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: {
+    fontSize: FONTS.lg,
+    fontWeight: FONTS.bold,
+    color: COLORS.textPrimary,
+  },
+  emptyDesc: {
+    fontSize: FONTS.md,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
 });
