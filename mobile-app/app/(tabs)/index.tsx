@@ -144,9 +144,13 @@ export default function DashboardScreen() {
       setError(null);
       startLoadingAnimation();
 
-      // 1단계: 로컬 캐시가 있으면 즉시 표시 (빠른 초기 렌더링)
+      // 1단계: 로컬 캐시가 있으면 날짜 확인 후 즉시 표시
+      const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
+      const todayKST = kstNow.toISOString().split('T')[0];
       const cached = await StorageService.getTodayReport();
-      if (cached && !cancelled) {
+
+      if (cached && !cancelled && cached.date === todayKST) {
+        // ✅ 오늘 날짜 캐시: 즉시 표시
         setReport(cached);
         setLoading(false);
         stopLoadingAnimation();
@@ -156,18 +160,24 @@ export default function DashboardScreen() {
           Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
         ]).start();
 
-        // 캐시가 있으면 백그라운드에서 조용히 서버 최신 확인 (실패해도 무관)
+        // 캐시가 있어도 백그라운드에서 서버 최신 확인 (실패해도 무관)
         try {
           const fresh = await ApiService.fetchDailyReport(false);
-          if (fresh && !cancelled) {
-            if (fresh.date !== cached.date || fresh.generatedAt !== cached.generatedAt) {
+          if (fresh && !cancelled && fresh.date === todayKST) {
+            if (fresh.generatedAt !== cached.generatedAt) {
               setReport(fresh);
             }
           }
         } catch {
-          // 백그라운드 갱신 실패 시 캐시를 그대로 사용, 화면 유지
+          // 백그라운드 갱신 실패 시 캐시 유지
         }
-        return; // 캐시 있으면 여기서 종료
+        return;
+      }
+
+      // 캐시 날짜가 오늘과 다르면 → 오래된 캐시 삭제
+      if (cached && cached.date !== todayKST) {
+        console.log(`[App] ⚠ 캐시 날짜 불일치 (캐시:${cached.date}, 오늘:${todayKST}) → 오래된 데이터 삭제`);
+        await StorageService.clearAll(); // 모든 구버전 데이터 삭제
       }
 
       // 2단계: 캐시 없으면 서버에서 직접 (항상 결과 반환 보장 - mock 포함)

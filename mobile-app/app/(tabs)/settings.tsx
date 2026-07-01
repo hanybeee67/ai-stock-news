@@ -157,17 +157,35 @@ export default function SettingsScreen() {
 
   const resetData = () => {
     Alert.alert(
-      '데이터 초기화',
-      '저장된 모든 뉴스와 리포트가 삭제됩니다. 계속하시겠습니까?',
+      '🗑 전체 데이터 초기화',
+      '저장된 모든 뉴스, 리포트, 픽 데이터가 삭제되고\n서버에서 오늘 날짜의 새 분석을 즉시 시작합니다.\n\n계속하시겠습니까?',
       [
         { text: '취소', style: 'cancel' },
         {
-          text: '초기화',
+          text: '초기화 + 새로 분석',
           style: 'destructive',
           onPress: async () => {
+            // 1. 로컬 모든 데이터 삭제
             await StorageService.clearAll();
             setSettings(DEFAULT_SETTINGS);
-            Alert.alert('완료', '데이터가 초기화되었습니다.');
+
+            // 2. 서버에 새 분석 즉시 요청
+            setTriggering(true);
+            try {
+              await ApiService.triggerAnalysis();
+              Alert.alert(
+                '✅ 초기화 완료',
+                '모든 데이터가 삭제되었습니다.\n\nAI 분석이 시작되었습니다. 약 1~3분 후\n홈 화면에서 당겨서 새로고침 해주세요!',
+              );
+            } catch {
+              Alert.alert(
+                '✅ 초기화 완료',
+                '모든 데이터가 삭제되었습니다.\n홈 화면에서 당겨서 새로고침 해주세요.',
+              );
+            } finally {
+              setTriggering(false);
+              setTimeout(checkServer, 3000);
+            }
           },
         },
       ]
