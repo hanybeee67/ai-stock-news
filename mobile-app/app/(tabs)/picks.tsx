@@ -33,6 +33,7 @@ interface TodayPick {
   market: string;
   reason: string;
   relevance: string;
+  priceLevel: string; // 'high' | 'low'(15000원 이하)
   sector: string;
   newsTitle: string;
   newsCategory: string;
@@ -52,9 +53,10 @@ function extractTodayPicks(report: DailyReport | null): TodayPick[] {
         key,
         stockName: stock.name,
         ticker: stock.ticker ?? '',
-        market: stock.market ?? '',
+        market: stock.market ?? 'KRX',
         reason: stock.reason ?? '',
         relevance: stock.relevance ?? 'medium',
+        priceLevel: (stock as any).priceLevel ?? 'high',
         sector: stock.sector ?? '',
         newsTitle: news.titleKo ?? news.title ?? '',
         newsCategory: news.category ?? '',
@@ -62,6 +64,12 @@ function extractTodayPicks(report: DailyReport | null): TodayPick[] {
       });
     }
   }
+  // 저가주(low)를 위로 정렬
+  picks.sort((a, b) => {
+    if (a.priceLevel === 'low' && b.priceLevel !== 'low') return -1;
+    if (b.priceLevel === 'low' && a.priceLevel !== 'low') return 1;
+    return 0;
+  });
   return picks;
 }
 
@@ -246,6 +254,11 @@ function TodayPickCard({
             >
               <Text style={[styles.relBadgeText, { color: relColor }]}>{relLabel}</Text>
             </View>
+            {pick.priceLevel === 'low' && (
+              <View style={[styles.relBadge, { backgroundColor: COLORS.accentGold + '20', borderColor: COLORS.accentGold + '50' }]}>
+                <Text style={[styles.relBadgeText, { color: COLORS.accentGold }]}>💸 1.5만원 이하</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.pickTicker}>
             {pick.ticker ? pick.ticker : '티커 미확인'}{pick.market ? ` · ${pick.market}` : ''}
