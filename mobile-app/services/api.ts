@@ -1,14 +1,11 @@
 // 📁 services/api.ts
 // 백엔드 API 연동 서비스 (Python FastAPI 서버 통신)
-// v2.0: 환경변수화, 신규 엔드포인트 추가, 폴링 지원
+// v2.1: 중복 fetchStockDetail 제거, Mock 폴백 제거 → null 반환으로 에러 UX 처리
 
 import axios, { AxiosInstance } from 'axios';
 import Constants from 'expo-constants';
 import { ApiResponse, DailyReport, AppSettings } from '../types';
 import { StorageService } from './storage';
-
-// ─── Mock 데이터 (백엔드 없을 때 개발/데모용) ──────────────────────
-import { MOCK_DAILY_REPORT } from '../data/mockData';
 
 // ✅ 환경변수에서 URL 가져오기 (app.json extra.apiUrl → 하드코딩 폴백)
 const BACKEND_URL: string =
@@ -103,7 +100,7 @@ export const ApiService = {
   },
 
   // ─── 오늘 리포트 가져오기 ────────────────────────────────────────
-  async fetchDailyReport(forceRefresh = false): Promise<DailyReport> {
+  async fetchDailyReport(forceRefresh = false): Promise<DailyReport | null> {
     // 1. 서버에서 직접 가져오기 (오늘 브리핑은 항상 서버를 먼저 확인)
     try {
       const client = await getClient();
@@ -123,20 +120,18 @@ export const ApiService = {
       console.warn('[API] ⚠ 서버 연결 실패:', err?.message);
     }
 
-    // 2. 서버 실패 시 로컈 캐시 폴백 (오프라인 대비)
+    // 2. 서버 실패 시 로컬 캐시 폴백 (오프라인 대비)
     if (!forceRefresh) {
       const cached = await StorageService.getTodayReport();
       if (cached) {
-        console.log('[API] ⚠ 서버 실패 → 컨캐시 폴백:', cached.date);
+        console.log('[API] ⚠ 서버 실패 → 캐시 폴백:', cached.date);
         return cached;
       }
     }
 
-    // 3. Fallback: Mock 데이터 (컨캐시 오염 방지를 위해 저장하지 않음)
-    const kstNow = new Date(new Date().getTime() + 9 * 60 * 60 * 1000);
-    const todayKST = kstNow.toISOString().split('T')[0];
-    const mockReport = { ...MOCK_DAILY_REPORT, date: todayKST };
-    return mockReport;
+    // 3. 캐시도 없으면 null 반환 → UI에서 에러 메시지 표시
+    console.warn('[API] ✗ 서버 연결 실패 & 캐시 없음 → null 반환');
+    return null;
   },
 
   // ─── 특정 날짜 리포트 ─────────────────────────────────────────────
@@ -203,7 +198,7 @@ export const ApiService = {
       const res = await client.post('/api/trigger-analysis');
       return res.data;
     } catch {
-      return { success: false, message: '서버 연결 실패' };
+      return { success: false, message: '서버 연결 실패. 서버가 슬립 상태일 수 있습니다. 잠시 후 다시 시도하세요.' };
     }
   },
 
@@ -243,17 +238,5 @@ export const ApiService = {
       await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
     }
     return null;
-  },
-
-  // ─── 종목 상세 조회 (백엔드 캐시 활용) ──────────────────────────────
-  async fetchStockDetail(ticker: string): Promise<any> {
-    try {
-      const client = await getClient();
-      const res = await client.get(`/api/stock/${ticker}`);
-      return res.data?.data ?? null;
-    } catch (e) {
-      console.warn(`[API] ⚠ 종목 상세 조회 실패: ${ticker}`);
-      return null;
-    }
   },
 };

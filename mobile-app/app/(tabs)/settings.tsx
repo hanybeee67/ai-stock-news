@@ -1,7 +1,8 @@
 // 📁 app/(tabs)/settings.tsx
-// 설정 화면 — v2.0: 서버 상태 상세 표시, 수동 분석 트리거, 커스텀 알림 시간
+// 설정 화면 — v2.1: 버튼 동작 수정 (초기화, 지금 분석)
 
 import React, { useEffect, useState } from 'react';
+import { router } from 'expo-router';
 import {
   View,
   Text,
@@ -132,22 +133,34 @@ export default function SettingsScreen() {
 
   // ── 수동 분석 트리거 ───────────────────────────────────────────────
   const handleTriggerAnalysis = async () => {
+    const isOffline = serverStatus !== 'online';
     Alert.alert(
-      '🤖 수동 분석 실행',
-      '지금 즉시 AI 분석을 시작합니다.\n완료까지 약 1~3분이 소요됩니다.',
+      isOffline ? '🔌 서버 연결 재시도' : '🤖 수동 분석 실행',
+      isOffline
+        ? '서버가 슬립 상태일 수 있습니다.\n연결을 시도하고 분석을 요청합니다.\n완료까지 1~3분이 걸릴 수 있습니다.'
+        : '지금 즉시 AI 분석을 시작합니다.\n완료까지 약 1~3분이 소요됩니다.',
       [
         { text: '취소', style: 'cancel' },
         {
-          text: '실행',
+          text: isOffline ? '연결 시도' : '실행',
           onPress: async () => {
             setTriggering(true);
+            // 서버 오프라인이면 먼저 헬스체크로 웨이크업 유도
+            if (isOffline) {
+              await ApiService.checkHealth().catch(() => {});
+              await new Promise(r => setTimeout(r, 2000));
+            }
             const result = await ApiService.triggerAnalysis();
             setTriggering(false);
             if (result.success) {
               Alert.alert('✅ 분석 시작', result.message);
               setTimeout(checkServer, 3000);
             } else {
-              Alert.alert('⚠️ 실패', result.message);
+              Alert.alert(
+                '⚠️ 실패',
+                result.message + '\n\n서버가 슬립 상태라면 30초 후 다시 시도해 주세요.',
+              );
+              setTimeout(checkServer, 5000);
             }
           },
         },
@@ -158,30 +171,34 @@ export default function SettingsScreen() {
   const resetData = () => {
     Alert.alert(
       '🗑 전체 데이터 초기화',
-      '저장된 모든 뉴스, 리포트, 픽 데이터가 삭제되고\n서버에서 오늘 날짜의 새 분석을 즉시 시작합니다.\n\n계속하시겠습니까?',
+      '저장된 모든 뉴스, 리포트, 픽 데이터가 삭제됩니다.\n\n계속하시겠습니까?',
       [
         { text: '취소', style: 'cancel' },
         {
-          text: '초기화 + 새로 분석',
+          text: '초기화',
           style: 'destructive',
           onPress: async () => {
-            // 1. 로컬 모든 데이터 삭제
-            await StorageService.clearAll();
-            setSettings(DEFAULT_SETTINGS);
-
-            // 2. 서버에 새 분석 즉시 요청
             setTriggering(true);
             try {
-              await ApiService.triggerAnalysis();
+              // 1. 로컬 모든 데이터 완전 삭제
+              await StorageService.clearAll();
+              setSettings(DEFAULT_SETTINGS);
+
+              // 2. 서버에 새 분석 요청 (실패해도 무관)
+              ApiService.triggerAnalysis().catch(() => {});
+
               Alert.alert(
                 '✅ 초기화 완료',
-                '모든 데이터가 삭제되었습니다.\n\nAI 분석이 시작되었습니다. 약 1~3분 후\n홈 화면에서 당겨서 새로고침 해주세요!',
+                '모든 데이터가 삭제되었습니다.\n홈 화면으로 이동하여 새로고침 해주세요.',
+                [
+                  {
+                    text: '홈으로 이동',
+                    onPress: () => router.replace('/'),
+                  },
+                ],
               );
-            } catch {
-              Alert.alert(
-                '✅ 초기화 완료',
-                '모든 데이터가 삭제되었습니다.\n홈 화면에서 당겨서 새로고침 해주세요.',
-              );
+            } catch (e) {
+              Alert.alert('오류', '초기화 중 문제가 발생했습니다. 다시 시도해 주세요.');
             } finally {
               setTriggering(false);
               setTimeout(checkServer, 3000);
@@ -386,15 +403,26 @@ export default function SettingsScreen() {
 
           {/* 수동 분석 트리거 */}
           <TouchableOpacity
-            style={[styles.triggerBtn, triggering && styles.triggerBtnDisabled]}
+            style={[
+              styles.triggerBtn,
+              triggering && styles.triggerBtnDisabled,
+              serverStatus !== 'online' && styles.triggerBtnOffline,
+            ]}
             onPress={handleTriggerAnalysis}
-            disabled={triggering || serverStatus !== 'online'}
+            disabled={triggering}
           >
             {triggering ? (
               <ActivityIndicator size="small" color={COLORS.primary} />
             ) : (
-              <Text style={styles.triggerBtnText}>
-                {serverStatus !== 'online' ? '🔌 서버 오프라인' : '⚡ 지금 분석 실행'}
+              <Text style={[
+                styles.triggerBtnText,
+                serverStatus !== 'online' && styles.triggerBtnTextOffline,
+              ]}>
+                {serverStatus === 'checking'
+                  ? '⏳ 서버 확인 중...'
+                  : serverStatus !== 'online'
+                  ? '🔌 서버 재연결 시도'
+                  : '⚡ 지금 분석 실행'}
               </Text>
             )}
           </TouchableOpacity>
@@ -724,7 +752,12 @@ const styles = StyleSheet.create({
   triggerBtnDisabled: {
     opacity: 0.5,
   },
+  triggerBtnOffline: {
+    backgroundColor: COLORS.accentRed + '12',
+    borderColor: COLORS.accentRed + '40',
+  },
   triggerBtnText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: FONTS.bold },
+  triggerBtnTextOffline: { color: COLORS.accentRed },
 
   apiInput: {
     backgroundColor: COLORS.bgSurface,

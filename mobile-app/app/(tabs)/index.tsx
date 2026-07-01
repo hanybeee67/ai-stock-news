@@ -72,6 +72,7 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serverOffline, setServerOffline] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [serverProgress, setServerProgress] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -107,6 +108,7 @@ export default function DashboardScreen() {
   const loadReport = useCallback(async (force = false) => {
     try {
       setError(null);
+      setServerOffline(false);
       startLoadingAnimation();
       let data: DailyReport | null = null;
       try {
@@ -120,7 +122,13 @@ export default function DashboardScreen() {
           throw err;
         }
       }
-      setReport(data);
+      if (data) {
+        setReport(data);
+        setServerOffline(false);
+      } else {
+        setServerOffline(true);
+        setError('서버에 연결할 수 없습니다. 설정 탭에서 서버 상태를 확인하세요.');
+      }
       setServerProgress('');
       Animated.stagger(150, [
         Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -129,6 +137,7 @@ export default function DashboardScreen() {
       ]).start();
     } catch (e: any) {
       setError('데이터를 불러오는 데 실패했습니다. 새로고침을 시도하세요.');
+      setServerOffline(true);
     } finally {
       stopLoadingAnimation();
       setLoading(false);
@@ -152,6 +161,7 @@ export default function DashboardScreen() {
       if (cached && !cancelled && cached.date === todayKST) {
         // ✅ 오늘 날짜 캐시: 즉시 표시
         setReport(cached);
+        setServerOffline(false);
         setLoading(false);
         stopLoadingAnimation();
         Animated.stagger(150, [
@@ -166,6 +176,7 @@ export default function DashboardScreen() {
           if (fresh && !cancelled && fresh.date === todayKST) {
             if (fresh.generatedAt !== cached.generatedAt) {
               setReport(fresh);
+              setServerOffline(false);
             }
           }
         } catch {
@@ -180,19 +191,22 @@ export default function DashboardScreen() {
         await StorageService.clearAll(); // 모든 구버전 데이터 삭제
       }
 
-      // 2단계: 캐시 없으면 서버에서 직접 (항상 결과 반환 보장 - mock 포함)
+      // 2단계: 캐시 없으면 서버에서 직접
       try {
         const data = await ApiService.fetchDailyReport(false);
         if (!cancelled) {
           if (data) {
             setReport(data);
+            setServerOffline(false);
             Animated.stagger(150, [
               Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
               Animated.timing(thermometerAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
               Animated.timing(contentAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
             ]).start();
           } else {
-            setError('데이터를 불러오는 데 실패했습니다. 새로고침을 시도하세요.');
+            // null → 서버 연결 실패 (캐시도 없음)
+            setServerOffline(true);
+            setError('서버에 연결할 수 없습니다.\n설정 탭에서 "지금 분석 실행"을 눌러 서버를 깨워보세요.');
           }
         }
       } catch (err: any) {
@@ -238,22 +252,14 @@ export default function DashboardScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // 로컬 캐시 먼저 초기화 → 확실하게 서버 데이터를 가져오도록
+    setServerOffline(false);
+    // 로컬 캐시 초기화 후 서버에서 새로 가져오기
     StorageService.clearTodayReportCache().then(() => {
-      ApiService.triggerAnalysis().then(() => {
-        setLoading(true);
-        ApiService.pollUntilReady(setServerProgress).then(data => {
-          if (data) setReport(data);
-          setLoading(false);
-          setRefreshing(false);
-        }).catch(() => {
-          setLoading(false);
-          setRefreshing(false);
-          loadReport(true);
-        });
+      loadReport(true).finally(() => {
+        setRefreshing(false);
       });
     });
-  }, []);
+  }, [loadReport]);
 
   const handleNewsPress = (news: NewsItem) => {
     router.push({ pathname: '/news/[id]', params: { id: news.id, data: JSON.stringify(news) } });
@@ -355,6 +361,17 @@ export default function DashboardScreen() {
             )}
           </LinearGradient>
         </Animated.View>
+
+        {/* ── 서버 오프라인 배너 ── */}
+        {serverOffline && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineBannerIcon}>🔌</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.offlineBannerTitle}>서버 연결 실패</Text>
+              <Text style={styles.offlineBannerDesc}>당겨서 새로고침하거나 설정에서 서버를 깨워보세요</Text>
+            </View>
+          </View>
+        )}
 
         {/* ── 🌡️ 시장 온도계 (1순위) ── */}
         {report && tempInfo && (
@@ -538,4 +555,21 @@ const styles = StyleSheet.create({
   emptyFilterText: { fontSize: FONTS.sm, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20 },
   errorBox: { backgroundColor: COLORS.dangerBg, borderRadius: RADIUS.md, padding: SPACING.base, marginBottom: SPACING.base, borderWidth: 1, borderColor: COLORS.danger + '40' },
   errorText: { color: COLORS.danger, fontSize: FONTS.sm, lineHeight: 18 },
+
+  // ── 서버 오프라인 배너 ──
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: '#FF8C4220',
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginHorizontal: SPACING.base,
+    marginTop: SPACING.sm,
+    borderWidth: 1,
+    borderColor: '#FF8C4250',
+  },
+  offlineBannerIcon: { fontSize: 20 },
+  offlineBannerTitle: { fontSize: FONTS.sm, color: '#FF8C42', fontWeight: FONTS.bold },
+  offlineBannerDesc: { fontSize: FONTS.xs, color: '#FF8C42', opacity: 0.8, marginTop: 2 },
 });
