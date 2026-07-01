@@ -370,41 +370,68 @@ class AIAnalyzer:
         return ""
 
     async def _enrich_stock_trends(self, report: dict) -> None:
-        """수혜주에 최근 주가 동향 추가 (yfinance, 실패해도 무시)"""
-        for news in report.get("topNews", []):
-            for stock in news.get("beneficiaryStocks", []):
-                ticker = stock.get("ticker", "")
+        """수혜주에 최근 주가 동향 추가 — 병렬 처리로 속도 개선 (종목당 타임아웃 10초)"""
+
+        async def enrich_one(stock: dict) -> None:
+            """단일 종목 주가 동향 조회 (실패 시 조용히 무시)"""
+            try:
                 name = stock.get("name", "")
-                
-                # 한국 종목인 경우 네이버 검색으로 정확한 티커 보정
-                is_korean = any("\u3131" <= c <= "\u318E" or "\uAC00" <= c <= "\uD7A3" for c in name)
+                ticker = stock.get("ticker", "")
+
+                # 한국 종목명이면 네이버로 티커 보정
+                is_korean = any('\u3131' <= c <= '\u318E' or '\uAC00' <= c <= '\uD7A3' for c in name)
                 if is_korean:
-                    real_ticker = await self._resolve_korean_ticker(name)
-                    if real_ticker:
-                        stock["ticker"] = real_ticker
-                        ticker = real_ticker
+                    try:
+                        real_ticker = await asyncio.wait_for(
+                            self._resolve_korean_ticker(name), timeout=5
+                        )
+                        if real_ticker:
+                            stock["ticker"] = real_ticker
+                            ticker = real_ticker
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[티커조회 타임아웃] {name}")
+                    except Exception as e:
+                        logger.warning(f"[티커조회 실패] {name}: {e}")
 
                 if not ticker:
-                    continue
-                try:
-                    yf_ticker = yf.Ticker(ticker)
-                    hist = yf_ticker.history(period="5d")
-                    if not hist.empty and len(hist) >= 2:
-                        current_price = hist['Close'].iloc[-1]
-                        start_price = hist['Close'].iloc[0]
-                        pct_change = ((current_price - start_price) / start_price) * 100
-                        sign = "+" if pct_change > 0 else ""
-                        currency = "원" if (".KS" in ticker or ".KQ" in ticker) else "$"
-                        if currency == "원":
-                            price_str = f"{int(current_price):,}원"
-                        else:
-                            price_str = f"${current_price:.2f}"
-                        stock["recentTrend"] = f"현재 {price_str} (최근 5일 {sign}{pct_change:.1f}%)"
-                        # 등락 방향도 저장
-                        stock["trendDirection"] = "up" if pct_change > 0 else "down" if pct_change < 0 else "flat"
-                        stock["trendPercent"] = round(pct_change, 2)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch trend for {ticker}: {e}")
+                    return
+
+                # yfinance 조회 (블로킹 → 스레드풀)
+                def fetch_hist():
+                    t = yf.Ticker(ticker)
+                    return t.history(period="5d")
+
+                hist = await asyncio.wait_for(
+                    asyncio.to_thread(fetch_hist), timeout=8
+                )
+
+                if not hist.empty and len(hist) >= 2:
+                    current_price = hist['Close'].iloc[-1]
+                    start_price = hist['Close'].iloc[0]
+                    pct_change = ((current_price - start_price) / start_price) * 100
+                    sign = "+" if pct_change > 0 else ""
+                    currency = "원" if (".KS" in ticker or ".KQ" in ticker) else "$"
+                    price_str = f"{int(current_price):,}원" if currency == "원" else f"${current_price:.2f}"
+                    stock["recentTrend"] = f"현재 {price_str} (최근 5일 {sign}{pct_change:.1f}%)"
+                    stock["trendDirection"] = "up" if pct_change > 0 else "down" if pct_change < 0 else "flat"
+                    stock["trendPercent"] = round(pct_change, 2)
+
+            except asyncio.TimeoutError:
+                logger.warning(f"[주가조회 타임아웃] {stock.get('ticker', stock.get('name', '?'))}")
+            except Exception as e:
+                logger.warning(f"[주가조회 실패] {stock.get('ticker', '?')}: {e}")
+
+        # 모든 수혜주를 병렬로 조회
+        all_stocks = [
+            stock
+            for news in report.get("topNews", [])
+            for stock in news.get("beneficiaryStocks", [])
+        ]
+
+        if all_stocks:
+            logger.info(f"📈 주가 동향 조회 시작: {len(all_stocks)}개 종목 (병렬)")
+            await asyncio.gather(*[enrich_one(s) for s in all_stocks])
+            logger.info(f"✅ 주가 동향 조회 완료")
 
 
 # ─── 독립 실행 테스트 ──────────────────────────────────────────────

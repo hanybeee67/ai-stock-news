@@ -80,21 +80,32 @@ async def run_daily_pipeline() -> dict:
             _analysis_progress = "📡 글로벌 뉴스 수집 중..."
             logger.info(f"Step 1: {_analysis_progress}")
             try:
-                news_items = await asyncio.wait_for(collector.collect_all(), timeout=120)
+                news_items = await asyncio.wait_for(collector.collect_all(), timeout=180)
             except asyncio.TimeoutError:
-                raise RuntimeError("뉴스 수집 타임아웃 (120초)")
+                raise RuntimeError("뉴스 수집 타임아웃 (180초)")
 
             if not news_items:
                 raise RuntimeError("수집된 뉴스가 없습니다.")
-            logger.info(f"✅ {len(news_items)}개 뉴스 수집")
+
+            # Claude 입력량 제한: 중요도 상위 30개만 선별 (응답 시간 단축)
+            MAX_NEWS = int(os.getenv("MAX_NEWS_COUNT", "30"))
+            if len(news_items) > MAX_NEWS:
+                news_items = sorted(
+                    news_items,
+                    key=lambda x: x.get("importance_score", 0),
+                    reverse=True
+                )[:MAX_NEWS]
+                logger.info(f"📌 뉴스 {len(news_items)}개로 제한 (상위 중요도 기준)")
+            else:
+                logger.info(f"✅ {len(news_items)}개 뉴스 수집")
 
             # Step 2: Claude AI 분석
             _analysis_progress = f"🤖 Claude AI 분석 중... ({len(news_items)}개)"
             logger.info(f"Step 2: {_analysis_progress}")
             try:
-                report = await asyncio.wait_for(analyzer.analyze(news_items), timeout=240)
+                report = await asyncio.wait_for(analyzer.analyze(news_items), timeout=480)
             except asyncio.TimeoutError:
-                raise RuntimeError("AI 분석 타임아웃 (240초)")
+                raise RuntimeError("AI 분석 타임아웃 (480초) — 뉴스 수를 줄이거나 MAX_NEWS_COUNT 환경변수를 조정하세요")
 
             # Step 3: Supabase 저장 (폴백: 로컬 파일)
             _analysis_progress = "💾 데이터 저장 중..."
