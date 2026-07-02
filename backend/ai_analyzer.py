@@ -155,7 +155,7 @@ class AIAnalyzer:
                 raise ValueError("⛔ GEMINI_API_KEY 환경변수가 설정되지 않았습니다!")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-latest")
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         self.max_retries = 2
 
     async def analyze(self, news_items: List[Dict]) -> Dict[str, Any]:
