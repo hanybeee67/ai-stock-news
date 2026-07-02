@@ -184,6 +184,14 @@ app.add_middleware(
 
 # ─── 엔드포인트 ───────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    return {
+        "message": "AI 증시 브리핑 백엔드 서버가 정상 작동 중입니다.",
+        "status": "running",
+        "docs_url": "/docs"
+    }
+
 @app.get("/health")
 async def health_check():
     today_report = db.load_today_report()
