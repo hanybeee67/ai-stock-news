@@ -197,8 +197,10 @@ export const ApiService = {
       const client = await getClient();
       const res = await client.post('/api/trigger-analysis');
       return res.data;
-    } catch {
-      return { success: false, message: '서버 연결 실패. 서버가 슬립 상태일 수 있습니다. 잠시 후 다시 시도하세요.' };
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : '서버 연결 실패. 서버가 슬립 상태일 수 있습니다. 잠시 후 다시 시도하세요.';
+      return { success: false, message: msg };
     }
   },
 
