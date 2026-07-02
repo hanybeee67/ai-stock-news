@@ -155,8 +155,8 @@ class AIAnalyzer:
                 raise ValueError("⛔ GEMINI_API_KEY 환경변수가 설정되지 않았습니다!")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        self.max_retries = 2
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+        self.max_retries = 3
 
     async def analyze(self, news_items: List[Dict]) -> Dict[str, Any]:
         if not news_items:
@@ -196,15 +196,23 @@ class AIAnalyzer:
                 last_error = e
                 logger.warning(f"⚠ 시도 {attempt} JSON 파싱 실패: {e}")
                 if attempt < self.max_retries:
-                    logger.info("🔁 재시도 중...")
+                    await asyncio.sleep(5)
                     continue
                 else:
                     logger.error(f"❌ 최대 재시도 초과. 원본 출력:\n{raw_output[:500] if raw_output else 'None'}")
                     raise RuntimeError(f"Gemini 응답 파싱 최종 실패: {e}")
             except Exception as e:
-                logger.error(f"❌ Gemini API 오류: {e}")
+                err_str = str(e)
+                logger.error(f"❌ Gemini API 오류 (시도 {attempt}): {e}")
+                # 429 RESOURCE_EXHAUSTED: 과부하 시 지수 백오프
+                if '429' in err_str or 'RESOURCE_EXHAUSTED' in err_str:
+                    wait_sec = min(30 * attempt, 90)  # 30s, 60s, 90s
+                    logger.warning(f"⏳ API 한도 초과 (429). {wait_sec}초 대기 후 재시도...")
+                    await asyncio.sleep(wait_sec)
+                    if attempt < self.max_retries:
+                        continue
                 if attempt < self.max_retries:
-                    logger.info("🔁 재시도 중...")
+                    await asyncio.sleep(5)
                     continue
                 raise RuntimeError(f"Gemini API 호출 실패: {e}")
 
