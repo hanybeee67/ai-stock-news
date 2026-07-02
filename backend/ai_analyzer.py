@@ -1,7 +1,7 @@
 """
 📁 backend/ai_analyzer.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Claude AI 뉴스 심층 분석 엔진
+Gemini AI 뉴스 심층 분석 엔진 (v3.0)
 
 핵심 기능:
 1. [필터링 법칙] 단순 시황 제외, 판도 변화 뉴스 선별
@@ -9,23 +9,72 @@ Claude AI 뉴스 심층 분석 엔진
 3. [수혜주 매칭] 논리적 근거 + 관련 종목 도출
 4. [리스크 쌍 도출] 진입 시 주의사항 반드시 병기
 
-변경사항 (v2.0):
-- AsyncAnthropic 으로 교체 → event loop 블로킹 제거
-- JSON 파싱 3단계 내성 강화 (정규식 재추출 + fallback)
-- 분석 재시도 로직 추가 (최대 2회)
+변경사항 (v3.0):
+- google-genai 패키지 기반 Gemini 1.5 Flash 모델로 교체
+- Pydantic Native JSON Schema를 이용한 100% 안정적 파싱
+- 클로드 의존성 및 복잡한 Regex 파싱 로직 제거
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
 import json
 import os
-import re
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from loguru import logger
-import anthropic
 import yfinance as yf
+from pydantic import BaseModel, Field
 
-# ─── Claude 시스템 프롬프트 ────────────────────────────────────────────
+# google-genai SDK
+from google import genai
+from google.genai import types
+
+# ─── Pydantic 응답 스키마 정의 (Gemini Structured Outputs 용) ─────────────
+class ButterflyEffect(BaseModel):
+    level: int = Field(description="1, 2, 3 중 하나")
+    description: str = Field(description="파급 효과를 완전한 한국어 문장으로 서술 ('~합니다' 또는 '~입니다'로 끝남)")
+    indicator: str = Field(description="실존하는 경제 지표명 (KOSPI 반도체 지수 등)")
+
+class BeneficiaryStock(BaseModel):
+    name: str = Field(description="종목명 — 반드시 한국(KRX) 상장 종목만. 미국 주식 절대 불가.")
+    ticker: str = Field(description="한국 코스피: 숫자6자리.KS / 코스닥: 숫자6자리.KQ. 불확실 시 빈 문자열")
+    market: str = Field(description="KRX 고정")
+    relevance: str = Field(description="high 또는 medium 또는 low")
+    priceLevel: str = Field(description="high(15000원 초과) 또는 low(15000원 이하)")
+    reason: str = Field(description="이 종목이 매수세를 자극하는 이유를 완결된 한국어 문장으로 서술")
+    sector: str = Field(description="섹터명")
+
+class RiskFactor(BaseModel):
+    title: str = Field(description="핵심 리스크 간결한 제목")
+    description: str = Field(description="손절 기준과 재료 소멸 시점 경고 (완결된 한국어 문장)")
+    severity: str = Field(description="high, medium, low 중 하나")
+
+class NewsAnalysis(BaseModel):
+    id: str
+    title: str = Field(description="원문 영어 제목")
+    titleKo: str = Field(description="자연스러운 한국어 번역 제목")
+    summary: str = Field(description="핵심 팩트 2문장 요약 (완결된 한국어 문장)")
+    aiAnalysis: str = Field(description="단기, 중기, 장기 분석을 줄바꿈으로 구분해 작성 (완결된 한국어 문장)")
+    category: str = Field(description="반도체/바이오/2차전지/매크로/에너지/방위산업/원자재/공급망/부동산/기술/식품·농업/금융 중 하나")
+    publishedAt: str = Field(description="ISO8601 날짜")
+    source: str = Field(description="뉴스 출처명")
+    sourceUrl: str = Field(description="원문 URL")
+    importance: int = Field(description="1~5")
+    marketImpact: str = Field(description="bullish, bearish, neutral 중 하나")
+    butterflyEffects: List[ButterflyEffect]
+    beneficiaryStocks: List[BeneficiaryStock]
+    riskFactors: List[RiskFactor]
+    aiConfidence: int = Field(description="0~100")
+    tags: List[str]
+
+class DailyReportSchema(BaseModel):
+    date: str
+    headline: str = Field(description="오늘의 핵심 단타 뉴스 요약 (불꽃 이모지 포함, 50자 이내)")
+    marketMood: str = Field(description="오늘 시장 분위기와 핵심 이유 1문장")
+    totalNewsAnalyzed: int
+    topNews: List[NewsAnalysis]
+
+# ─── 시스템 프롬프트 ────────────────────────────────────────────
 SYSTEM_PROMPT = """# 당신은 누구인가
 
 당신의 이름은 **찰리(Charlie)**입니다.
@@ -46,19 +95,19 @@ SYSTEM_PROMPT = """# 당신은 누구인가
 
 ---
 
-# 분석 시 반드시 지켜야 할 3가지 절대 원칙
+# 분석 시 반드시 지켜야 할 절대 원칙
 
 ## 원칙 1 ─ 필터링 법칙 (선별의 기준)
 하루 수백 개의 뉴스 중 **'단기적 변동성'과 '재료의 신선도'가 가장 높은 뉴스**만 골라냅니다.
 단순 시황 중계가 아닌, 오늘 당장 돈이 몰릴 곳을 찾습니다.
 
 ## 원칙 2 ─ 3단계 정밀 분석 (aiAnalysis 필드에 작성)
-1. **단기 분석 (당일 ~ 5영업일 이내 - ★가장 중요★)**: 예상 주가 흐름(예: "장 초반 갭상승 후 눌림목 형성 예상")과 주린이 단타 가이드(시초가 매매 시 주의점 등).
+1. **단기 분석 (당일 ~ 5영업일 이내 - ★가장 중요★)**: 예상 주가 흐름과 주린이 단타 가이드(시초가 매매 시 주의점 등).
 2. **중기 분석 (1개월 ~ 3개월 이내)**: 일회성 테마인지, 실적에 영향을 줄 플로우인지 판단.
-3. **장기 분석 (6개월 이상)**: 패러다임 자체를 바꾸는 메가 트렌드인지 딱 한 줄로만 담백하게 평할 것.
+3. **장기 분석 (6개월 이상)**: 패러다임 자체를 바꾸는 메가 트렌드인지 판단.
 
 ## 원칙 3 ─ 수혜주 & 단타 필수 리스크 경고
-- **수혜주**: 재료 신선도(최상/상/보통)와 핵심 단기 수혜 이유(왜 오늘 당장 매수세를 자극하는지)를 직관적으로 설명.
+- **수혜주**: 재료 신선도와 핵심 단기 수혜 이유(왜 오늘 당장 매수세를 자극하는지)를 직관적으로 설명.
 - **리스크 경고 (주린이 방어벽)**: "시초가 깨질 때 -3% 손절" 등 구체적인 손절 기준과 재료 소멸 시점 경고.
 
 ## 원칙 4 ─ 한국 주식 전용 + 저가주 필수 포함 (절대 원칙)
@@ -71,17 +120,13 @@ SYSTEM_PROMPT = """# 당신은 누구인가
 
 # 출력 형식 규칙 (절대 준수)
 
-1. **반드시 유효한 JSON만 출력**합니다. JSON 외 어떤 설명 텍스트도 출력하지 않습니다.
-2. **모든 텍스트는 한국어**로 작성합니다.
-3. `aiConfidence` 점수는 엄격하게 부여합니다.
-4. 모든 분석은 프롭트레이더의 직관적이고 단호한 말투를 사용합니다.
-5. **수혜주는 반드시 한국 KRX 상장 종목만 선정**합니다. 미국 주식은 절대 포함하지 않습니다."""
+1. 모든 텍스트는 한국어로 작성하며, JSON 필드 포맷(특히 Pydantic Schema)에 맞추어 생성합니다.
+2. 각 필드의 문자열(description, reason 등)은 항상 주어와 서술어를 갖춘 완결된 한국어 문장이어야 하며, 불완전하게 끊기면 안 됩니다.
+3. `beneficiaryStocks`의 티커는 확실하지 않으면 반드시 빈 문자열("")로 남겨두세요. 절대 추측하지 마세요.
+"""
 
-# ─── 분석 요청 프롬프트 템플릿 ────────────────────────────────────────
 def build_analysis_prompt(news_items: List[Dict]) -> str:
-    """Claude에게 보낼 분석 요청 프롬프트 생성"""
-
-    # summary_clean(전처리 완료) 우선, 없으면 summary_raw 사용
+    """Gemini에게 보낼 분석 요청 텍스트 생성"""
     news_text = "\n\n".join([
         f"[뉴스 {i+1}] [{item['source']}]\n"
         f"제목: {item['title']}\n"
@@ -94,205 +139,74 @@ def build_analysis_prompt(news_items: List[Dict]) -> str:
 
 {news_text}
 
-위 뉴스들을 분석하여 다음 JSON 형식으로 정확히 출력하세요:
-
-{{
-  "date": "YYYY-MM-DD",
-  "headline": "오늘의 핵심 단타 뉴스 요약 (불꽃 이모지 포함, 50자 이내, 완결된 문장으로 작성)",
-  "marketMood": "오늘 시장의 분위기를 '강세', '약세', '혼조' 등 간결한 단어로 표현한 뒤, 핵심 이유를 한 문장으로 덧붙일 것. 예: '혼조 – 미중 관세 갈등 재점화로 불확실성 고조'",
-  "totalNewsAnalyzed": {len(news_items)},
-  "topNews": [
-    {{
-      "id": "news-001",
-      "title": "원문 영어 제목 (원문 그대로)",
-      "titleKo": "자연스러운 한국어 번역 제목 (완전한 문장 형태, 직역 금지)",
-      "summary": "주린이도 30초 만에 이해할 수 있도록, 오늘 장 시작 직후 주가에 즉각적인 영향을 줄 핵심 팩트 2문장으로 요약. 각 문장은 '~입니다', '~습니다'로 끝나는 완결된 문장이어야 하며 단어가 중간에 끊기거나 생략되어서는 안 됩니다.",
-      "aiAnalysis": "■ 투자 기간별 3단계 정밀 분석\\n1. 단기(당일~5영업일 ★가장 중요★): 예상 주가 흐름과 단타 대응 가이드를 구체적으로 서술. 예: '장 초반 갭상승 후 눌림목 형성 가능성이 높습니다. 시초가가 전일 종가 대비 2% 이상 상승 출발 시 추격 매수는 금물이며, 눌림목에서의 분할 매수를 권장합니다.'\\n2. 중기(1~3개월): 일회성 테마인지, 실적 개선으로 이어질 구조적 변화인지 판단하여 완전한 문장으로 서술.\\n3. 장기(6개월 이상): 패러다임 변화 여부를 한 문장으로 담백하게 평가. 예: '미중 반도체 디커플링이 장기적으로 국내 소부장 업체의 수혜로 이어질 가능성이 있습니다.'",
-      "category": "카테고리명 (반도체/바이오/2차전지/매크로/에너지/방위산업/원자재/공급망/부동산/기술/식품·농업/금융 중 반드시 하나만 선택)",
-      "publishedAt": "ISO8601 날짜",
-      "source": "뉴스 출처명",
-      "sourceUrl": "원문 URL",
-      "importance": 1에서5사이정수,
-      "marketImpact": "bullish 또는 bearish 또는 neutral",
-      "butterflyEffects": [
-        {{
-          "level": 1,
-          "description": "1차 파급 효과를 완전한 한국어 문장으로 서술. 주어와 서술어를 갖춘 완결된 문장이어야 하며, 반드시 '~합니다' 또는 '~입니다'로 끝나야 합니다. 예: '미국 수출 규제 강화로 국내 메모리 반도체 기업들의 단기 매출 감소가 우려됩니다.'",
-          "indicator": "실제 경제 지표명만 작성. 예: 'KOSPI 반도체 지수', 'S&P500', 'WTI 원유', '달러인덱스(DXY)', '10년물 미국채 금리'. 임의로 만든 이름이나 불확실한 지표는 절대 작성하지 마세요."
-        }},
-        {{
-          "level": 2,
-          "description": "2차 파급 효과를 완전한 한국어 문장으로 서술. 주어와 서술어를 갖춘 완결된 문장이어야 하며, 반드시 '~합니다' 또는 '~입니다'로 끝나야 합니다. 예: '중국 보복 조치로 인해 애플·테슬라 등 중국 의존도가 높은 미국 기업들의 주가 하락 압력이 커질 수 있습니다.'"
-        }},
-        {{
-          "level": 3,
-          "description": "3차 파급 효과를 완전한 한국어 문장으로 서술. 주어와 서술어를 갖춘 완결된 문장이어야 하며, 반드시 '~합니다' 또는 '~입니다'로 끝나야 합니다. 예: '안전자산 선호 심리가 강화되며 금과 달러가 동반 강세를 보이고, 신흥국 통화 약세가 심화될 가능성이 있습니다.'"
-        }}
-      ],
-      "beneficiaryStocks": [
-        {{
-          "name": "종목명 — 반드시 한국(KRX) 상장 종목만. 미국 주식 절대 불가.",
-          "ticker": "정확한 종목코드. 한국 코스피: 숫자6자리.KS / 코스닥: 숫자6자리.KQ. 확실하지 않으면 빈 문자열. 절대 추측 금지.",
-          "market": "KRX 고정 (NYSE·NASDAQ 입력 금지)",
-          "relevance": "high 또는 medium 또는 low",
-          "priceLevel": "high(15000원 초과) 또는 low(15000원 이하) — 반드시 각 뉴스당 low 종목 최소 1개 포함",
-          "reason": "이 뉴스가 오늘 당장 왜 이 종목의 매수세를 자극하는지 완전한 문장으로 설명. 재료 신선도(최상/상/보통)와 핵심 수혜 근거 포함. 저가주(15000원 이하)의 경우 소액 투자자 접근 가능성도 함께 언급할 것.",
-          "sector": "섹터명"
-        }}
-      ],
-      "riskFactors": [
-        {{
-          "title": "🚨 핵심 리스크 (간결한 제목)",
-          "description": "명확한 손절 기준과 재료 소멸 시점을 완전한 문장으로 경고. 예: '시초가 기준 -3% 이탈 시 즉시 손절하세요. 미중 협상이 재개될 경우 이 재료는 하루 만에 소멸될 수 있습니다.'",
-          "severity": "high 또는 medium 또는 low"
-        }}
-      ],
-      "aiConfidence": 0에서100사이정수,
-      "tags": ["태그1", "태그2"]
-    }}
-  ]
-}}
-
-⚠️ 출력 품질 절대 원칙:
-1. 모든 description, summary, aiAnalysis, reason 필드는 반드시 완결된 한국어 문장으로 작성하세요.
-2. indicator 필드에는 반드시 실존하는 경제 지표명만 사용하세요.
-3. ticker 필드는 확실하지 않으면 반드시 빈 문자열("")로 작성하고, 절대 추측으로 채우지 마세요.
-4. 선별 기준: 가장 중요한 뉴스 3~5개만 선별하여 topNews 배열에 포함하세요.
-5. 반드시 유효한 JSON만 출력하세요. JSON 앞뒤에 어떠한 텍스트도 붙이지 마세요.
-6. 🚨 수혜주 선정 핵심 규칙 (위반 시 분석 무효):
-   - beneficiaryStocks에는 반드시 한국(KRX) 상장 종목만 포함하세요. NYSE·NASDAQ 종목은 절대 포함 금지.
-   - 각 뉴스의 beneficiaryStocks 배열에는 반드시 현재 주가 15,000원 이하 저가 종목을 1개 이상 포함하세요.
-   - 저가 종목은 해당 뉴스 테마와 논리적으로 연결되어야 합니다."""
-
-
-def _extract_json_robust(raw_output: str) -> Optional[dict]:
-    """
-    Claude 응답에서 JSON을 강건하게 추출하는 3단계 시도.
-
-    1단계: 마크다운 코드블록 제거 후 직접 파싱
-    2단계: 정규식으로 { ... } 블록 추출 후 파싱
-    3단계: 중첩된 JSON 구조 브루트포스 탐색
-    """
-    # ── 1단계: 코드블록 벗기기 ──
-    clean = raw_output.strip()
-    if clean.startswith("```"):
-        lines = clean.split("\n")
-        # 첫 줄(```json 또는 ```) 과 마지막 줄(```) 제거
-        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        clean = "\n".join(inner).strip()
-
-    try:
-        return json.loads(clean)
-    except json.JSONDecodeError:
-        pass
-
-    # ── 2단계: 정규식으로 JSON 오브젝트 블록 추출 ──
-    json_pattern = re.compile(r'\{[\s\S]*\}', re.DOTALL)
-    match = json_pattern.search(raw_output)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            pass
-
-    # ── 3단계: 중괄호 균형 맞춰 추출 ──
-    start_idx = raw_output.find('{')
-    if start_idx != -1:
-        depth = 0
-        for i, ch in enumerate(raw_output[start_idx:], start=start_idx):
-            if ch == '{':
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(raw_output[start_idx:i+1])
-                    except json.JSONDecodeError:
-                        break
-
-    return None
+위 뉴스들을 분석하여 정의된 JSON 스키마 형식으로 3~5개의 핵심 뉴스를 선별하여 출력하세요.
+"""
 
 
 class AIAnalyzer:
-    """Claude API 기반 뉴스 심층 분석 엔진 (비동기 v2.0)"""
+    """Gemini API 기반 뉴스 심층 분석 엔진 (비동기 v3.0)"""
 
     def __init__(self):
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("⛔ ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다!")
+            # 호환성을 위해 구환경 변수가 있으면 우선 사용 시도 (원칙은 GEMINI_API_KEY 사용)
+            api_key = os.getenv("ANTHROPIC_API_KEY") 
+            if not api_key:
+                raise ValueError("⛔ GEMINI_API_KEY 환경변수가 설정되지 않았습니다!")
 
-        # ✅ AsyncAnthropic 사용 — event loop 블로킹 방지
-        self.client = anthropic.AsyncAnthropic(api_key=api_key)
-        self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
-        self.top_n = int(os.getenv("TOP_NEWS_COUNT", "5"))
+        self.client = genai.Client(api_key=api_key)
+        self.model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         self.max_retries = 2
 
     async def analyze(self, news_items: List[Dict]) -> Dict[str, Any]:
-        """
-        뉴스 목록을 Claude에게 전달하여 심층 분석 결과 반환
-
-        Args:
-            news_items: news_collector.py에서 수집한 뉴스 딕셔너리 목록
-
-        Returns:
-            DailyReport 형식의 딕셔너리
-        """
         if not news_items:
             raise ValueError("분석할 뉴스가 없습니다.")
 
-        logger.info(f"🤖 Claude 분석 시작: {len(news_items)}개 뉴스, 모델={self.model}")
+        logger.info(f"🤖 Gemini 분석 시작: {len(news_items)}개 뉴스, 모델={self.model}")
         start = datetime.now()
 
         prompt = build_analysis_prompt(news_items)
         raw_output = None
 
-        # ── 재시도 루프 ──
         last_error = None
         for attempt in range(1, self.max_retries + 1):
             try:
-                logger.info(f"🔄 Claude API 호출 (시도 {attempt}/{self.max_retries})")
-                # ✅ await 비동기 호출
-                message = await self.client.messages.create(
+                logger.info(f"🔄 Gemini API 호출 (시도 {attempt}/{self.max_retries})")
+                
+                # google-genai 비동기 호출
+                response = await self.client.aio.models.generate_content(
                     model=self.model,
-                    max_tokens=8192,
-                    system=SYSTEM_PROMPT,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt,
-                        }
-                    ],
-                    temperature=0.3,  # 낮은 temperature = 더 일관되고 사실적인 출력
+                    contents=[SYSTEM_PROMPT, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=DailyReportSchema,
+                        temperature=0.3,
+                    )
                 )
 
-                raw_output = message.content[0].text
+                raw_output = response.text
                 elapsed = (datetime.now() - start).total_seconds()
-                logger.info(f"✅ Claude 응답 완료 ({elapsed:.1f}초, {message.usage.output_tokens} 토큰)")
+                logger.info(f"✅ Gemini 응답 완료 ({elapsed:.1f}초)")
 
-                # ── 강건한 JSON 파싱 ──
-                report = _extract_json_robust(raw_output)
-                if report is None:
-                    raise RuntimeError("JSON 추출 실패: 3단계 파싱 모두 실패")
+                # Native JSON Schema를 통해 반환되므로 바로 로드 가능
+                report = json.loads(raw_output)
+                break
 
-                break  # 성공 시 루프 탈출
-
-            except (json.JSONDecodeError, RuntimeError) as e:
+            except json.JSONDecodeError as e:
                 last_error = e
-                logger.warning(f"⚠ 시도 {attempt} 파싱 실패: {e}")
+                logger.warning(f"⚠ 시도 {attempt} JSON 파싱 실패: {e}")
                 if attempt < self.max_retries:
                     logger.info("🔁 재시도 중...")
                     continue
                 else:
-                    logger.error(f"❌ 최대 재시도 초과. 원본 출력 (앞 500자):\n{raw_output[:500] if raw_output else 'None'}")
-                    raise RuntimeError(f"Claude 응답 파싱 최종 실패: {e}")
-
-            except anthropic.APIStatusError as e:
-                logger.error(f"❌ Claude API 오류 {e.status_code}: {e.message}")
-                raise RuntimeError(f"Claude API 오류: {e.message}")
-
-            except anthropic.APIConnectionError as e:
-                logger.error(f"❌ Claude API 연결 실패: {e}")
-                raise RuntimeError("Claude API에 연결할 수 없습니다. 인터넷 연결을 확인하세요.")
+                    logger.error(f"❌ 최대 재시도 초과. 원본 출력:\n{raw_output[:500] if raw_output else 'None'}")
+                    raise RuntimeError(f"Gemini 응답 파싱 최종 실패: {e}")
+            except Exception as e:
+                logger.error(f"❌ Gemini API 오류: {e}")
+                if attempt < self.max_retries:
+                    logger.info("🔁 재시도 중...")
+                    continue
+                raise RuntimeError(f"Gemini API 호출 실패: {e}")
 
         # ── 주가 동향 추가 및 티커 자동 보정 (yfinance & Naver) ──
         await self._enrich_stock_trends(report)
@@ -305,15 +219,12 @@ class AIAnalyzer:
         return report
 
     async def _resolve_korean_ticker(self, name: str) -> str:
-        """네이버 금융 검색 API를 통해 한국 종목의 정확한 6자리 티커(+ .KS/.KQ)를 반환"""
         import aiohttp
         import urllib.parse
         import re
 
-        # 1. 불필요한 접미사 제거
         clean_name = re.sub(r'\(주\)|주식회사|\s+', '', name)
 
-        # 2. 하드코딩 사전 폴백 (주요 AI 환각 및 인기 종목)
         fallback_dict = {
             "삼성전자": "005930.KS",
             "SK하이닉스": "000660.KS",
@@ -362,7 +273,6 @@ class AIAnalyzer:
                                 if len(item) >= 3 and (item[1] == clean_name or item[1] == name):
                                     code, _, market = item[0], item[1], item[2]
                                     return f"{code}.KS" if market == 'KOSPI' else f"{code}.KQ"
-                            # 정확히 일치하는 이름이 없으면 첫번째 결과 반환
                             code, market = items[0][0], items[0][2]
                             return f"{code}.KS" if market == 'KOSPI' else f"{code}.KQ"
         except Exception as e:
@@ -370,15 +280,11 @@ class AIAnalyzer:
         return ""
 
     async def _enrich_stock_trends(self, report: dict) -> None:
-        """수혜주에 최근 주가 동향 추가 — 병렬 처리로 속도 개선 (종목당 타임아웃 10초)"""
-
         async def enrich_one(stock: dict) -> None:
-            """단일 종목 주가 동향 조회 (실패 시 조용히 무시)"""
             try:
                 name = stock.get("name", "")
                 ticker = stock.get("ticker", "")
 
-                # 한국 종목명이면 네이버로 티커 보정
                 is_korean = any('\u3131' <= c <= '\u318E' or '\uAC00' <= c <= '\uD7A3' for c in name)
                 if is_korean:
                     try:
@@ -396,7 +302,6 @@ class AIAnalyzer:
                 if not ticker:
                     return
 
-                # yfinance 조회 (블로킹 → 스레드풀)
                 def fetch_hist():
                     t = yf.Ticker(ticker)
                     return t.history(period="5d")
@@ -421,7 +326,6 @@ class AIAnalyzer:
             except Exception as e:
                 logger.warning(f"[주가조회 실패] {stock.get('ticker', '?')}: {e}")
 
-        # 모든 수혜주를 병렬로 조회
         all_stocks = [
             stock
             for news in report.get("topNews", [])
@@ -432,41 +336,3 @@ class AIAnalyzer:
             logger.info(f"📈 주가 동향 조회 시작: {len(all_stocks)}개 종목 (병렬)")
             await asyncio.gather(*[enrich_one(s) for s in all_stocks])
             logger.info(f"✅ 주가 동향 조회 완료")
-
-
-# ─── 독립 실행 테스트 ──────────────────────────────────────────────
-if __name__ == "__main__":
-    import asyncio
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    # 테스트용 더미 뉴스
-    test_news = [
-        {
-            "id": "test-001",
-            "title": "US Imposes New Semiconductor Export Restrictions on China",
-            "summary_raw": "The Biden administration announced sweeping new restrictions on exports of advanced semiconductors to China...",
-            "url": "https://reuters.com/test",
-            "source": "Reuters",
-            "category_hint": "기술",
-            "published_at": "2026-05-30",
-            "importance_score": 9,
-        },
-        {
-            "id": "test-002",
-            "title": "Brazil Drought Pushes Soybean Prices to 2-Year High",
-            "summary_raw": "Severe drought conditions in Brazil's main agricultural regions have pushed soybean futures to highest levels since 2024...",
-            "url": "https://bloomberg.com/test",
-            "source": "Bloomberg",
-            "category_hint": "원자재",
-            "published_at": "2026-05-30",
-            "importance_score": 7,
-        },
-    ]
-
-    async def test():
-        analyzer = AIAnalyzer()
-        result = await analyzer.analyze(test_news)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-
-    asyncio.run(test())
