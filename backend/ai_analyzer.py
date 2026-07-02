@@ -221,7 +221,12 @@ class AIAnalyzer:
                     except Exception:
                         return None
 
-                result = await asyncio.to_thread(get_price)
+                try:
+                    result = await asyncio.wait_for(asyncio.to_thread(get_price), timeout=6)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[yfinance 타임아웃] {name} ({ticker})")
+                    result = None
+
                 if result:
                     stock.update(result)
                     if result["currentPrice"] <= 15000:
