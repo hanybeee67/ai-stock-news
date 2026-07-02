@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
     # AIAnalyzer 초기화
     try:
         analyzer = AIAnalyzer()
-        logger.info(f"✅ Claude AI 엔진 초기화 완료 (모델: {analyzer.model})")
+        logger.info(f"✅ Gemini AI 엔진 초기화 완료 (모델: {analyzer.model})")
     except Exception as e:
         logger.error(f"❌ AIAnalyzer 초기화 실패: {e}")
 
@@ -168,8 +168,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI 증시 브리핑 API",
-    description="Claude AI 기반 글로벌 증시 뉴스 분석 서버 v2.1",
-    version="2.1.0",
+    description="Gemini AI 기반 글로벌 증시 뉴스 분석 서버 v2.2",
+    version="2.2.0",
     lifespan=lifespan,
 )
 
@@ -210,9 +210,9 @@ async def get_status():
     return JSONResponse(content={
         "success": True,
         "data": {
-            "serverVersion": "2.1.0",
+            "serverVersion": "2.2.0",
             "analyzerReady": analyzer is not None,
-            "claudeModel": analyzer.model if analyzer else None,
+            "geminiModel": analyzer.model if analyzer else None,
             "isAnalyzing": _is_analyzing,
             "analysisProgress": _analysis_progress,
             "analysisStartedAt": _analysis_started_at,
@@ -243,7 +243,7 @@ async def get_daily_report():
 
     if not report:
         if not analyzer:
-            raise HTTPException(status_code=503, detail="AI 엔진 미초기화. ANTHROPIC_API_KEY 확인.")
+            raise HTTPException(status_code=503, detail="AI 엔진 미초기화. GEMINI_API_KEY 확인.")
         if _is_analyzing:
             raise HTTPException(status_code=202, detail={
                 "message": "분석 진행 중입니다.",
@@ -399,7 +399,7 @@ async def get_stock_detail(ticker: str):
             },
         }
 
-        # ── 3. Claude 번역 (info 부족 시에만) ────────────────────
+        # ── 3. Gemini 번역 (info 부족 시에만) ────────────────────
         if analyzer and analyzer.client:
             try:
                 is_missing = (data["name"] == ticker or
@@ -421,12 +421,13 @@ async def get_stock_detail(ticker: str):
                     prompt = None
 
                 if prompt:
-                    response = await analyzer.client.messages.create(
-                        model="claude-haiku-4-5",   # 빠른 모델 사용
-                        max_tokens=400,
-                        messages=[{"role": "user", "content": prompt}],
+                    from google.genai import types
+                    response = await analyzer.client.aio.models.generate_content(
+                        model="gemini-1.5-flash",   # 빠른 모델 사용
+                        contents=prompt,
+                        config=types.GenerateContentConfig(temperature=0.3)
                     )
-                    content = response.content[0].text.strip()
+                    content = response.text.strip()
 
                     if is_missing:
                         import re as _re, json as _json
@@ -441,7 +442,7 @@ async def get_stock_detail(ticker: str):
                         data["summary"] = content
 
             except Exception as e:
-                logger.warning(f"Claude 번역/생성 실패 [{ticker}]: {e}")
+                logger.warning(f"Gemini 번역/생성 실패 [{ticker}]: {e}")
 
         # ── 4. 캐시 저장 ──────────────────────────────────────────
         _stock_cache[ticker] = {"data": data, "ts": time.time()}

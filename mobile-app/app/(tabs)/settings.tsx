@@ -499,7 +499,7 @@ export default function SettingsScreen() {
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>AI 엔진</Text>
-            <Text style={styles.infoValue}>Claude 3.5 Sonnet</Text>
+            <Text style={styles.infoValue}>Gemini 1.5 Flash</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>서버 URL</Text>
