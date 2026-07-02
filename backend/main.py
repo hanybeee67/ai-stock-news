@@ -56,7 +56,7 @@ async def run_daily_pipeline() -> dict:
     """
     전체 분석 파이프라인:
     1. RSS 뉴스 수집
-    2. Claude AI 심층 분석
+    2. Gemini AI 심층 분석
     3. Supabase 저장 (폴백: 로컬 파일)
     """
     global _is_analyzing, _analysis_progress, _last_error, _analysis_started_at
@@ -87,8 +87,8 @@ async def run_daily_pipeline() -> dict:
             if not news_items:
                 raise RuntimeError("수집된 뉴스가 없습니다.")
 
-            # Claude 입력량 제한: 중요도 상위 30개만 선별 (응답 시간 단축)
-            MAX_NEWS = int(os.getenv("MAX_NEWS_COUNT", "30"))
+            # Gemini 입력량 제한: 중요도 상위 10개만 선별 (429 오류 방지)
+            MAX_NEWS = int(os.getenv("MAX_NEWS_COUNT", "10"))
             if len(news_items) > MAX_NEWS:
                 news_items = sorted(
                     news_items,
@@ -99,13 +99,13 @@ async def run_daily_pipeline() -> dict:
             else:
                 logger.info(f"✅ {len(news_items)}개 뉴스 수집")
 
-            # Step 2: Claude AI 분석
-            _analysis_progress = f"🤖 Claude AI 분석 중... ({len(news_items)}개)"
+            # Step 2: Gemini AI 분석
+            _analysis_progress = f"🤖 Gemini AI 분석 중... ({len(news_items)}개)"
             logger.info(f"Step 2: {_analysis_progress}")
             try:
-                report = await asyncio.wait_for(analyzer.analyze(news_items), timeout=480)
+                report = await asyncio.wait_for(analyzer.analyze(news_items), timeout=600)
             except asyncio.TimeoutError:
-                raise RuntimeError("AI 분석 타임아웃 (480초) — 뉴스 수를 줄이거나 MAX_NEWS_COUNT 환경변수를 조정하세요")
+                raise RuntimeError("AI 분석 타임아웃 (600초) — MAX_NEWS_COUNT 환경변수를 조정하세요")
 
             # Step 3: Supabase 저장 (폴백: 로컬 파일)
             _analysis_progress = "💾 데이터 저장 중..."
