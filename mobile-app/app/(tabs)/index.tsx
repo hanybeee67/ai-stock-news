@@ -75,6 +75,7 @@ export default function DashboardScreen() {
   const [serverOffline, setServerOffline] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [serverProgress, setServerProgress] = useState('');
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [investorLevel, setInvestorLevel] = useState<string>('intermediate');
   const [{ date, time, greeting }] = useState(getKoreanDateTime());
@@ -109,15 +110,20 @@ export default function DashboardScreen() {
     try {
       setError(null);
       setServerOffline(false);
+      setLoadingTimedOut(false);
       startLoadingAnimation();
       let data: DailyReport | null = null;
       try {
         data = await ApiService.fetchDailyReport(force);
       } catch (err: any) {
         if (err?.message === 'analyzing') {
-          setServerProgress('🤖 서버에서 분석 중...');
-          data = await ApiService.pollUntilReady((msg) => setServerProgress(msg), 180, 5);
-          if (!data) throw new Error('분석 완료 대기 시간 초과');
+          setServerProgress('🤖 서버에서 분석 중... (1~3분 소요)');
+          // 최대 5분 폴링
+          data = await ApiService.pollUntilReady((msg) => setServerProgress(msg), 300, 10);
+          if (!data) {
+            setLoadingTimedOut(true);
+            throw new Error('분석 완료 대기 시간 초과');
+          }
         } else {
           throw err;
         }
@@ -282,12 +288,26 @@ export default function DashboardScreen() {
         </View>
         <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: SPACING.md }} />
         <Text style={styles.loadingText}>{serverProgress || LOADING_STEPS[loadingStep]}</Text>
-        <Text style={styles.loadingSubtext}>AI가 전 세계 뉴스를 분석하고 있어요</Text>
-        <View style={styles.stepIndicator}>
-          {LOADING_STEPS.map((_, i) => (
-            <View key={i} style={[styles.stepDot, i === loadingStep && styles.stepDotActive]} />
-          ))}
-        </View>
+        <Text style={styles.loadingSubtext}>
+          {serverProgress
+            ? 'AI 분석 완료까지 약 1~3분 소요됩니다'
+            : 'AI가 전 세계 뉴스를 분석하고 있어요'}
+        </Text>
+        {serverProgress ? (
+          <TouchableOpacity
+            style={{ marginTop: SPACING.xl, paddingHorizontal: SPACING.xl, paddingVertical: SPACING.sm,
+              backgroundColor: COLORS.bgSurface, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border }}
+            onPress={() => { setLoading(false); setServerOffline(true); setError('분석이 진행 중입니다. 잠시 후 당겨서 새로고침하세요.'); stopLoadingAnimation(); }}
+          >
+            <Text style={{ color: COLORS.textSecondary, fontSize: FONTS.sm }}>⏩ 백그라운드에서 계속 분석</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.stepIndicator}>
+            {LOADING_STEPS.map((_, i) => (
+              <View key={i} style={[styles.stepDot, i === loadingStep && styles.stepDotActive]} />
+            ))}
+          </View>
+        )}
       </View>
     );
   }

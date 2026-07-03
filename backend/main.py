@@ -237,7 +237,7 @@ async def get_status():
 
 
 @app.get("/api/daily-report")
-async def get_daily_report():
+async def get_daily_report(background_tasks: BackgroundTasks):
     from zoneinfo import ZoneInfo
     kst_now = datetime.now(ZoneInfo("Asia/Seoul"))
     today_str = kst_now.strftime("%Y-%m-%d")
@@ -253,14 +253,19 @@ async def get_daily_report():
         if not analyzer:
             raise HTTPException(status_code=503, detail="AI 엔진 미초기화. OPENAI_API_KEY 확인.")
         if _is_analyzing:
+            # 분석 진행 중 → 202 즉시 응답 (앱이 폴링으로 대기)
             raise HTTPException(status_code=202, detail={
                 "message": "분석 진행 중입니다.",
                 "progress": _analysis_progress,
             })
-        try:
-            report = await run_daily_pipeline()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
+        # ✅ 핵심 수정: 직접 await 대신 백그라운드로 실행 후 202 즉시 응답
+        # (기존 코드: await run_daily_pipeline() → 수 분 블로킹 → 앱 타임아웃)
+        logger.info("⚡ 리포트 없음 → 백그라운드 분석 시작, 202 즉시 응답")
+        background_tasks.add_task(run_daily_pipeline)
+        raise HTTPException(status_code=202, detail={
+            "message": "분석을 시작했습니다. 약 1~3분 후 다시 요청하세요.",
+            "progress": "📡 분석 시작 중...",
+        })
 
     return JSONResponse(content={
         "success": True,
