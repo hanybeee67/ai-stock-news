@@ -82,10 +82,12 @@ export default function RootLayout() {
     } catch (e) {
       console.error('[App Init Error]', e);
     } finally {
-      await SplashScreen.hideAsync();
       setAppReady(true);
-      setShowIntro(true);
-      startIntroAnimation();
+      // 인트로 오버레이가 먼저 렌더된 뒤에 스플래시 숨김 (흰화면 방지)
+      setTimeout(async () => {
+        await SplashScreen.hideAsync();
+        startIntroAnimation();
+      }, 50);
     }
   }
 
@@ -146,7 +148,7 @@ export default function RootLayout() {
           style={[
             styles.introWrapper,
             StyleSheet.absoluteFillObject,
-            { opacity: exitAnim },
+            { opacity: exitAnim, backgroundColor: '#03071A' }, // 처음부터 불투명 어두운 배경
           ]}
           pointerEvents={showIntro ? 'auto' : 'none'}
         >
