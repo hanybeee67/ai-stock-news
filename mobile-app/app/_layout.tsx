@@ -37,7 +37,7 @@ const PARTICLES = [
 
 export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
-  const [showIntro, setShowIntro] = useState(false);
+  const [showIntro, setShowIntro] = useState(true); // 처음부터 인트로 오버레이 표시
   const [introStep, setIntroStep] = useState<'logo' | 'disclaimer' | 'done'>('logo');
 
   // 애니메이션 값들
