@@ -429,25 +429,30 @@ async def get_stock_detail(ticker: str):
                     prompt = None
 
                 if prompt:
-                    from google.genai import types
-                    response = await analyzer.client.aio.models.generate_content(
-                        model="gemini-2.0-flash-exp",
-                        contents=prompt,
-                        config=types.GenerateContentConfig(temperature=0.3)
-                    )
-                    content = response.text.strip()
-
-                    if is_missing:
-                        import re as _re, json as _json
-                        m = _re.search(r'\{.*\}', content, _re.DOTALL)
-                        if m:
-                            parsed = _json.loads(m.group(0))
-                            data["name"]     = parsed.get("name",     data["name"])
-                            data["sector"]   = parsed.get("sector",   data["sector"])
-                            data["industry"] = parsed.get("industry", data["industry"])
-                            data["summary"]  = parsed.get("summary",  data["summary"])
-                    else:
-                        data["summary"] = content
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={analyzer.api_key}"
+                    payload = {
+                        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                        "generationConfig": {"temperature": 0.3}
+                    }
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(url, json=payload, timeout=15) as resp:
+                            if resp.status == 200:
+                                resp_json = await resp.json()
+                                candidates = resp_json.get("candidates", [])
+                                if candidates:
+                                    content = candidates[0]["content"]["parts"][0]["text"].strip()
+                                    if is_missing:
+                                        import re as _re, json as _json
+                                        m = _re.search(r'\{.*\}', content, _re.DOTALL)
+                                        if m:
+                                            parsed = _json.loads(m.group(0))
+                                            data["name"]     = parsed.get("name",     data["name"])
+                                            data["sector"]   = parsed.get("sector",   data["sector"])
+                                            data["industry"] = parsed.get("industry", data["industry"])
+                                            data["summary"]  = parsed.get("summary",  data["summary"])
+                                    else:
+                                        data["summary"] = content
 
             except Exception as e:
                 logger.warning(f"Gemini 번역/생성 실패 [{ticker}]: {e}")

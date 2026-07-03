@@ -1,59 +1,88 @@
 """
-Gemini AI News Analyzer v5.0
-- Google GenAI Structured Outputs (Pydantic) for 100% JSON reliability
-- yfinance timeout applied (6s)
-- Optimized for gemini-2.0-flash
+Gemini AI News Analyzer v6.0 (REST API Bypass)
+- Bypasses google-genai SDK to fix 404 / 429 limit:0 errors
+- Uses raw aiohttp REST API calls to v1beta endpoint
+- Forced to gemini-1.5-flash
 """
 
 import json
 import os
 import re
 import asyncio
+import aiohttp
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from loguru import logger
 import yfinance as yf
-from pydantic import BaseModel, Field
 
-from google import genai
-from google.genai import types
-
-# ─── Pydantic Schemas for Gemini Structured Output ───
-class ButterflyEffect(BaseModel):
-    level: int = Field(description="1 or 2")
-    description: str
-    indicator: str
-
-class BeneficiaryStock(BaseModel):
-    name: str = Field(description="Korean stock name")
-    ticker: str = Field(description="Stock code, e.g., 005930.KS")
-    reason: str
-    isLowPrice: bool = Field(description="Set to true if price is under 15000 KRW")
-
-class RiskFactor(BaseModel):
-    description: str
-    severity: str = Field(description="high, medium, or low")
-
-class NewsAnalysis(BaseModel):
-    title: str
-    source: str
-    url: str
-    category: str
-    impact: str = Field(description="bullish, bearish, or neutral")
-    aiSummary: str
-    aiAnalysis: str
-    butterflyEffects: List[ButterflyEffect]
-    beneficiaryStocks: List[BeneficiaryStock]
-    riskFactors: List[RiskFactor]
-    aiConfidence: int
-    tags: List[str]
-
-class DailyReportSchema(BaseModel):
-    date: str
-    headline: str
-    marketMood: str
-    totalNewsAnalyzed: int
-    topNews: List[NewsAnalysis]
+# ─── Raw JSON Schema Definition ───
+RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "date": {"type": "STRING"},
+        "headline": {"type": "STRING"},
+        "marketMood": {"type": "STRING"},
+        "totalNewsAnalyzed": {"type": "INTEGER"},
+        "topNews": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "title": {"type": "STRING"},
+                    "source": {"type": "STRING"},
+                    "url": {"type": "STRING"},
+                    "category": {"type": "STRING"},
+                    "impact": {"type": "STRING", "description": "bullish, bearish, or neutral"},
+                    "aiSummary": {"type": "STRING"},
+                    "aiAnalysis": {"type": "STRING"},
+                    "butterflyEffects": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "level": {"type": "INTEGER", "description": "1 or 2"},
+                                "description": {"type": "STRING"},
+                                "indicator": {"type": "STRING"}
+                            },
+                            "required": ["level", "description", "indicator"]
+                        }
+                    },
+                    "beneficiaryStocks": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "name": {"type": "STRING", "description": "Korean stock name"},
+                                "ticker": {"type": "STRING", "description": "Stock code, e.g., 005930.KS"},
+                                "reason": {"type": "STRING"},
+                                "isLowPrice": {"type": "BOOLEAN"}
+                            },
+                            "required": ["name", "ticker", "reason"]
+                        }
+                    },
+                    "riskFactors": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "description": {"type": "STRING"},
+                                "severity": {"type": "STRING", "description": "high, medium, or low"}
+                            },
+                            "required": ["description", "severity"]
+                        }
+                    },
+                    "aiConfidence": {"type": "INTEGER"},
+                    "tags": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"}
+                    }
+                },
+                "required": ["title", "source", "url", "category", "impact", "aiSummary", "aiAnalysis", "butterflyEffects", "beneficiaryStocks", "riskFactors", "aiConfidence", "tags"]
+            }
+        }
+    },
+    "required": ["date", "headline", "marketMood", "totalNewsAnalyzed", "topNews"]
+}
 
 SYSTEM_PROMPT = """You are Charlie, a 30-year veteran Wall Street prop trader. Analyze Korean stock market news.
 ABSOLUTE RULES:
@@ -85,43 +114,69 @@ TICKER_MAP = {
 
 class AIAnalyzer:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
             raise ValueError("GEMINI_API_KEY not set")
-        self.client = genai.Client(api_key=api_key)
-        env_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
-        self.model = "gemini-2.0-flash-exp" if "lite" in env_model else env_model
+        
+        env_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.model = "gemini-1.5-flash" if "lite" in env_model else env_model
+        
+        # Hard fallback if it's 2.0 (since 2.0 gives limit:0)
+        if "2.0" in self.model:
+            self.model = "gemini-1.5-flash"
+
         self.max_retries = 3
-        logger.info(f"AIAnalyzer v5.0 initialized: model={self.model}")
+        logger.info(f"AIAnalyzer v6.0 (REST API bypass) initialized: model={self.model}")
 
     async def analyze(self, news_items: List[Dict]) -> Dict[str, Any]:
         if not news_items:
             raise ValueError("No news items to analyze")
-        logger.info(f"Gemini analysis start: {len(news_items)} items, model={self.model}")
+        logger.info(f"REST API analysis start: {len(news_items)} items, model={self.model}")
         start = datetime.now()
         prompt = build_prompt(news_items)
         
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                response = await self.client.aio.models.generate_content(
-                    model=self.model,
-                    contents=[SYSTEM_PROMPT, prompt],
-                    config=types.GenerateContentConfig(
-                        temperature=0.2,
-                        response_mime_type="application/json",
-                        response_schema=DailyReportSchema,
-                    )
-                )
-                report = json.loads(response.text)
-                elapsed = (datetime.now() - start).total_seconds()
-                logger.info(f"Gemini API responded with valid JSON in {elapsed:.1f}s")
-                break
-            except Exception as e:
-                logger.error(f"Attempt {attempt} failed: {e}")
-                if attempt < self.max_retries:
-                    await asyncio.sleep(5)
-                    continue
-                raise RuntimeError(f"Gemini API failed after {self.max_retries} attempts: {e}")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": [
+                {"role": "user", "parts": [{"text": prompt}]}
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+                "responseSchema": RESPONSE_SCHEMA
+            }
+        }
+
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    async with session.post(url, json=payload, timeout=45) as resp:
+                        resp_json = await resp.json()
+                        
+                        if resp.status != 200:
+                            err_msg = resp_json.get("error", {}).get("message", "Unknown error")
+                            raise RuntimeError(f"HTTP {resp.status}: {err_msg}")
+                            
+                        candidates = resp_json.get("candidates", [])
+                        if not candidates:
+                            raise RuntimeError("No candidates returned from API")
+                            
+                        text_content = candidates[0]["content"]["parts"][0]["text"]
+                        report = json.loads(text_content)
+                        
+                        elapsed = (datetime.now() - start).total_seconds()
+                        logger.info(f"REST API responded with valid JSON in {elapsed:.1f}s")
+                        break
+                except Exception as e:
+                    logger.error(f"Attempt {attempt} failed: {e}")
+                    if attempt < self.max_retries:
+                        await asyncio.sleep(5)
+                        continue
+                    raise RuntimeError(f"REST API failed after {self.max_retries} attempts: {e}")
 
         report["generatedAt"] = datetime.now(timezone.utc).isoformat()
         report["date"] = datetime.now().strftime("%Y-%m-%d")
@@ -129,7 +184,7 @@ class AIAnalyzer:
         return report
 
     async def _resolve_ticker(self, name: str) -> str:
-        import aiohttp, urllib.parse
+        import urllib.parse
         clean = re.sub(r'\(주\)|주식회사|\s+', '', name)
         for key, val in TICKER_MAP.items():
             if key in clean or clean in key: return val
