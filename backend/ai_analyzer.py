@@ -89,8 +89,8 @@ class AIAnalyzer:
         if not api_key:
             raise ValueError("GEMINI_API_KEY not set")
         self.client = genai.Client(api_key=api_key)
-        env_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        self.model = "gemini-2.0-flash" if "lite" in env_model else env_model
+        env_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-8b")
+        self.model = "gemini-1.5-flash-8b" if "lite" in env_model else env_model
         self.max_retries = 3
         logger.info(f"AIAnalyzer v5.0 initialized: model={self.model}")
 
