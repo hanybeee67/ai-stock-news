@@ -431,7 +431,7 @@ async def get_stock_detail(ticker: str):
                 if prompt:
                     from google.genai import types
                     response = await analyzer.client.aio.models.generate_content(
-                        model="gemini-1.5-flash-8b",
+                        model="gemini-2.0-flash-exp",
                         contents=prompt,
                         config=types.GenerateContentConfig(temperature=0.3)
                     )
