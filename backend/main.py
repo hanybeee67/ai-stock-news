@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
     # AIAnalyzer 초기화
     try:
         analyzer = AIAnalyzer()
-        logger.info(f"✅ Gemini AI 엔진 초기화 완료 (모델: {analyzer.model})")
+        logger.info(f"✅ OpenAI AI 엔진 초기화 완료 (모델: {analyzer.model})")
     except Exception as e:
         logger.error(f"❌ AIAnalyzer 초기화 실패: {e}")
 
@@ -220,7 +220,7 @@ async def get_status():
         "data": {
             "serverVersion": "2.2.0",
             "analyzerReady": analyzer is not None,
-            "geminiModel": analyzer.model if analyzer else None,
+            "aiModel": analyzer.model if analyzer else None,
             "isAnalyzing": _is_analyzing,
             "analysisProgress": _analysis_progress,
             "analysisStartedAt": _analysis_started_at,
@@ -251,7 +251,7 @@ async def get_daily_report():
 
     if not report:
         if not analyzer:
-            raise HTTPException(status_code=503, detail="AI 엔진 미초기화. GEMINI_API_KEY 확인.")
+            raise HTTPException(status_code=503, detail="AI 엔진 미초기화. OPENAI_API_KEY 확인.")
         if _is_analyzing:
             raise HTTPException(status_code=202, detail={
                 "message": "분석 진행 중입니다.",
@@ -407,8 +407,8 @@ async def get_stock_detail(ticker: str):
             },
         }
 
-        # ── 3. Gemini 번역 (info 부족 시에만) ────────────────────
-        if analyzer and analyzer.client:
+        # ── 3. OpenAI 번역 (info 부족 시에만) ────────────────────
+        if analyzer and analyzer.api_key:
             try:
                 is_missing = (data["name"] == ticker or
                               data["summary"] == "제공된 기업 정보가 없습니다.")
@@ -417,7 +417,7 @@ async def get_stock_detail(ticker: str):
                     prompt = (
                         f"주식 티커 '{ticker}'에 대한 기업 정보를 JSON 형식으로만 응답해줘. "
                         "개요는 한국어로 주식/경제 용어에 맞게 3~4문장으로 요약해줘.\n"
-                        '형식: {"name": "종목명", "sector": "섹터", "industry": "산업군", "summary": "개요 내용"}'
+                        '응답 형식: {"name": "종목명", "sector": "섹터", "industry": "산업군", "summary": "개요"}'
                     )
                 elif data.get("summary"):
                     prompt = (
@@ -429,33 +429,36 @@ async def get_stock_detail(ticker: str):
                     prompt = None
 
                 if prompt:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={analyzer.api_key}"
-                    payload = {
-                        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                        "generationConfig": {"temperature": 0.3}
+                    import aiohttp as _aiohttp, json as _json, re as _re
+                    _headers = {"Authorization": f"Bearer {analyzer.api_key}", "Content-Type": "application/json"}
+                    _payload = {
+                        "model": analyzer.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3,
+                        "max_tokens": 512,
                     }
-                    import aiohttp
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(url, json=payload, timeout=15) as resp:
-                            if resp.status == 200:
-                                resp_json = await resp.json()
-                                candidates = resp_json.get("candidates", [])
-                                if candidates:
-                                    content = candidates[0]["content"]["parts"][0]["text"].strip()
-                                    if is_missing:
-                                        import re as _re, json as _json
-                                        m = _re.search(r'\{.*\}', content, _re.DOTALL)
-                                        if m:
-                                            parsed = _json.loads(m.group(0))
-                                            data["name"]     = parsed.get("name",     data["name"])
-                                            data["sector"]   = parsed.get("sector",   data["sector"])
-                                            data["industry"] = parsed.get("industry", data["industry"])
-                                            data["summary"]  = parsed.get("summary",  data["summary"])
-                                    else:
-                                        data["summary"] = content
+                    async with _aiohttp.ClientSession() as _session:
+                        async with _session.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers=_headers, json=_payload,
+                            timeout=_aiohttp.ClientTimeout(total=15)
+                        ) as _resp:
+                            if _resp.status == 200:
+                                _rj = await _resp.json()
+                                content = _rj["choices"][0]["message"]["content"].strip()
+                                if is_missing:
+                                    m = _re.search(r'\{.*\}', content, _re.DOTALL)
+                                    if m:
+                                        parsed = _json.loads(m.group(0))
+                                        data["name"]     = parsed.get("name",     data["name"])
+                                        data["sector"]   = parsed.get("sector",   data["sector"])
+                                        data["industry"] = parsed.get("industry", data["industry"])
+                                        data["summary"]  = parsed.get("summary",  data["summary"])
+                                else:
+                                    data["summary"] = content
 
             except Exception as e:
-                logger.warning(f"Gemini 번역/생성 실패 [{ticker}]: {e}")
+                logger.warning(f"OpenAI 번역/생성 실패 [{ticker}]: {e}")
 
         # ── 4. 캐시 저장 ──────────────────────────────────────────
         _stock_cache[ticker] = {"data": data, "ts": time.time()}
