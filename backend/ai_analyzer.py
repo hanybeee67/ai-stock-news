@@ -111,7 +111,9 @@ class AIAnalyzer:
         if not api_key:
             raise ValueError("GEMINI_API_KEY not set")
         self.client = genai.Client(api_key=api_key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        env_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        # lite 버전은 무료 쿼터가 0이므로 강제로 flash 버전을 사용
+        self.model = "gemini-2.0-flash" if "lite" in env_model else env_model
         self.max_retries = 3
         logger.info(f"AIAnalyzer v4.0 initialized: model={self.model}")
 
