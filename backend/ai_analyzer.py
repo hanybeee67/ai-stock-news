@@ -28,7 +28,7 @@ class BeneficiaryStock(BaseModel):
     name: str = Field(description="Korean stock name")
     ticker: str = Field(description="Stock code, e.g., 005930.KS")
     reason: str
-    isLowPrice: bool = Field(default=False)
+    isLowPrice: bool = Field(description="Set to true if price is under 15000 KRW")
 
 class RiskFactor(BaseModel):
     description: str
