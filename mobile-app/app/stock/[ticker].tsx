@@ -7,18 +7,18 @@ import { ApiService, StockDetail } from '../../services/api';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 
 export default function StockDetailScreen() {
-  const { ticker } = useLocalSearchParams<{ ticker: string }>();
+  const { ticker, name } = useLocalSearchParams<{ ticker: string; name?: string }>();
   const [loading, setLoading] = useState(true);
   const [stock, setStock] = useState<StockDetail | null>(null);
 
   useEffect(() => {
     if (ticker) {
-      ApiService.fetchStockDetail(ticker).then(data => {
+      ApiService.fetchStockDetail(ticker, name).then(data => {
         setStock(data);
         setLoading(false);
       });
     }
-  }, [ticker]);
+  }, [ticker, name]);
 
   if (loading) {
     return (

@@ -156,10 +156,11 @@ export const ApiService = {
   },
 
   // ─── 특정 종목 상세정보 ─────────────────────────────────────────────
-  async fetchStockDetail(ticker: string): Promise<StockDetail | null> {
+  async fetchStockDetail(ticker: string, name?: string): Promise<StockDetail | null> {
     try {
       const client = await getClient();
-      const res = await client.get<ApiResponse<StockDetail>>(`/api/stock/${ticker}`);
+      const url = name ? `/api/stock/${ticker}?name=${encodeURIComponent(name)}` : `/api/stock/${ticker}`;
+      const res = await client.get<ApiResponse<StockDetail>>(url);
       if (res.data.success && res.data.data) {
         return res.data.data;
       }

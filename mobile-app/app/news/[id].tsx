@@ -193,7 +193,7 @@ export default function NewsDetailScreen() {
                 <StockCard 
                   key={i} 
                   stock={stock} 
-                  onPress={(ticker) => router.push(`/stock/${ticker}`)}
+                  onPress={(ticker, name) => router.push(`/stock/${ticker}?name=${encodeURIComponent(name)}`)}
                 />
               ))}
             </View>
@@ -256,7 +256,7 @@ function ButterflyEffectCard({ effect, isLast }: { effect: ButterflyEffect; isLa
 }
 
 // ── 수혜주 카드 (아코디언 인라인 확장, 즉시 표시) ─────────────────────
-function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (ticker: string) => void }) {
+function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (ticker: string, name: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [liveData, setLiveData] = useState<any>(null);
   const [liveLoading, setLiveLoading] = useState(false);
@@ -396,7 +396,7 @@ function StockCard({ stock, onPress }: { stock: BeneficiaryStock; onPress: (tick
           {/* 상세 페이지 이동 버튼 */}
           <TouchableOpacity 
             style={styles.detailBtn} 
-            onPress={() => onPress(stock.ticker)}
+            onPress={() => onPress(stock.ticker, stock.name)}
             activeOpacity={0.8}
           >
             <Text style={styles.detailBtnText}>🔍 {stock.name} 상세 정보 및 실시간 차트 보기</Text>

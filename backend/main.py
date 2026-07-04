@@ -314,7 +314,7 @@ _stock_cache: dict = {}   # { ticker: {"data": {...}, "ts": float} }
 STOCK_CACHE_TTL = 3600    # 1시간 (초)
 
 @app.get("/api/stock/{ticker}")
-async def get_stock_detail(ticker: str):
+async def get_stock_detail(ticker: str, name: str = None):
     """
     종목 상세 정보 반환.
     최적화:
@@ -396,7 +396,7 @@ async def get_stock_detail(ticker: str):
             
         data = {
             "ticker": ticker,
-            "name":        info.get("shortName") or info.get("longName") or ticker,
+            "name":        info.get("shortName") or info.get("longName") or name or ticker,
             "sector":      info.get("sector", "N/A"),
             "industry":    info.get("industry", "N/A"),
             "summary":     info.get("longBusinessSummary", "제공된 기업 정보가 없습니다."),
@@ -419,8 +419,10 @@ async def get_stock_detail(ticker: str):
                               data["summary"] == "제공된 기업 정보가 없습니다.")
 
                 if is_missing:
+                    # name이 주어지면 name을 사용하고, 없으면 ticker를 사용
+                    company_identifier = name if name else ticker
                     prompt = (
-                        f"주식 티커 '{ticker}'에 대한 기업 정보를 JSON 형식으로만 응답해줘. "
+                        f"주식 종목 '{company_identifier}' (티커: {ticker})에 대한 기업 정보를 JSON 형식으로만 응답해줘. "
                         "개요는 한국어로 주식/경제 용어에 맞게 3~4문장으로 요약해줘.\n"
                         '응답 형식: {"name": "종목명", "sector": "섹터", "industry": "산업군", "summary": "개요"}'
                     )
