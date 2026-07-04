@@ -183,72 +183,6 @@ class AIAnalyzer:
         return report
 
 
-def _normalize_report(report: dict) -> None:
-    """
-    OpenAI 응답 필드명을 모바일 앱 타입(DailyReport/NewsItem)에 맞게 정규화.
-    - impact → marketImpact
-    - aiSummary → summary  (없으면 기존 summary 유지)
-    - titleKo 없으면 title로 채우기
-    - id 없으면 자동 생성
-    - riskFactors[].description → title + description 분리
-    """
-    import uuid
-    for i, news in enumerate(report.get("topNews", [])):
-        # id 보장
-        if not news.get("id"):
-            news["id"] = f"news-{i+1:03d}-{uuid.uuid4().hex[:6]}"
-
-        # marketImpact 정규화
-        if "impact" in news and "marketImpact" not in news:
-            news["marketImpact"] = news.pop("impact")
-        if "marketImpact" not in news:
-            news["marketImpact"] = "neutral"
-
-        # summary 정규화 (aiSummary 우선)
-        if "aiSummary" in news and not news.get("summary"):
-            news["summary"] = news.pop("aiSummary")
-        elif "aiSummary" in news:
-            news.pop("aiSummary", None)
-
-        # titleKo 보장
-        if not news.get("titleKo"):
-            news["titleKo"] = news.get("title", "")
-
-        # publishedAt 보장
-        if not news.get("publishedAt"):
-            news["publishedAt"] = datetime.now(timezone.utc).isoformat()
-
-        # sourceUrl 보장
-        if not news.get("sourceUrl"):
-            news["sourceUrl"] = news.get("url", "")
-
-        # importance 보장
-        if not news.get("importance"):
-            news["importance"] = 3
-
-        # riskFactors 정규화
-        for rf in news.get("riskFactors", []):
-            if not rf.get("title"):
-                rf["title"] = "리스크"
-            if not rf.get("severity"):
-                rf["severity"] = "medium"
-
-        # butterflyEffects 정규화
-        for be in news.get("butterflyEffects", []):
-            if not be.get("indicator"):
-                be["indicator"] = ""
-
-        # beneficiaryStocks 정규화
-        for stock in news.get("beneficiaryStocks", []):
-            if not stock.get("market"):
-                stock["market"] = "KRX"
-            if not stock.get("relevance"):
-                stock["relevance"] = "medium"
-            if not stock.get("sector"):
-                stock["sector"] = ""
-
-
-
     async def _resolve_ticker(self, name: str) -> str:
         """종목명으로 KRX 티커 코드 조회 (네이버 금융 자동 검색)"""
         import urllib.parse
@@ -332,3 +266,25 @@ def _normalize_report(report: dict) -> None:
         ]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+def _normalize_report(report: dict) -> None:
+    import uuid
+    for i, news in enumerate(report.get("topNews", [])):
+        if not news.get("id"): news["id"] = f"news-{i+1:03d}-{uuid.uuid4().hex[:6]}"
+        if "impact" in news and "marketImpact" not in news: news["marketImpact"] = news.pop("impact")
+        if "marketImpact" not in news: news["marketImpact"] = "neutral"
+        if "aiSummary" in news and not news.get("summary"): news["summary"] = news.pop("aiSummary")
+        elif "aiSummary" in news: news.pop("aiSummary", None)
+        if not news.get("titleKo"): news["titleKo"] = news.get("title", "")
+        if not news.get("publishedAt"): news["publishedAt"] = datetime.now(timezone.utc).isoformat()
+        if not news.get("sourceUrl"): news["sourceUrl"] = news.get("url", "")
+        if not news.get("importance"): news["importance"] = 3
+        for rf in news.get("riskFactors", []):
+            if not rf.get("title"): rf["title"] = "리스크"
+            if not rf.get("severity"): rf["severity"] = "medium"
+        for be in news.get("butterflyEffects", []):
+            if not be.get("indicator"): be["indicator"] = ""
+        for stock in news.get("beneficiaryStocks", []):
+            if not stock.get("market"): stock["market"] = "KRX"
+            if not stock.get("relevance"): stock["relevance"] = "medium"
+            if not stock.get("sector"): stock["sector"] = ""
