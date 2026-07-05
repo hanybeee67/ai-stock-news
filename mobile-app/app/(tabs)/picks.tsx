@@ -296,7 +296,7 @@ function TodayPickCard({
           {pick.ticker ? (
             <TouchableOpacity
               style={styles.stockDetailBtn}
-              onPress={() => router.push(`/stock/${pick.ticker}?name=${encodeURIComponent(pick.name)}`)}
+              onPress={() => router.push(`/stock/${pick.ticker}?name=${encodeURIComponent(pick.stockName)}`)}
               activeOpacity={0.8}
             >
               <Text style={styles.stockDetailBtnText}>

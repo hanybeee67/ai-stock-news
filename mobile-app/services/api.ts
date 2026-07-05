@@ -19,7 +19,7 @@ async function getClient(): Promise<AxiosInstance> {
 
   _client = axios.create({
     baseURL: BACKEND_URL,
-    timeout: 60000,
+    timeout: 120000, // Render 서버의 콜드스타트(최대 1~2분 소요) 대비 타임아웃 120초로 연장
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -32,10 +32,30 @@ async function getClient(): Promise<AxiosInstance> {
     return req;
   });
 
-  // 응답 인터셉터 - 에러 처리
+  // 응답 인터셉터 - 자동 재시도 로직 (콜드스타트, 502 Bad Gateway 등 대비)
   _client.interceptors.response.use(
     res => res,
     async err => {
+      const config = err.config as any;
+      // 재시도 횟수 상태 보관 (기본 0, 최대 2번 재시도)
+      if (!config || config.retryCount === undefined) {
+        if (config) config.retryCount = 0;
+      }
+
+      const shouldRetry =
+        err.code === 'ECONNABORTED' || // 타임아웃
+        err.message === 'Network Error' || // 네트워크 오류
+        (err.response && err.response.status >= 500); // 서버 오류 (502, 503 등)
+
+      if (shouldRetry && config && config.retryCount < 2) {
+        config.retryCount += 1;
+        console.warn(`[API] ⚠ Error: ${err.message}. Retrying (${config.retryCount}/2)...`);
+        
+        // 3초 대기 후 재시도
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        return _client!(config);
+      }
+
       console.error('[API] ✗ Error:', err.message);
       throw err;
     }
