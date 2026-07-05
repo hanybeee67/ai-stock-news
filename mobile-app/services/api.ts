@@ -124,15 +124,25 @@ export const ApiService = {
     // 1. 서버에서 직접 가져오기 (오늘 브리핑은 항상 서버를 먼저 확인)
     try {
       const client = await getClient();
-      const res = await client.get<ApiResponse<DailyReport>>('/api/daily-report');
-      if (res.data.success && res.data.data) {
+      const res = await client.get<any>('/api/daily-report');
+      
+      // Axios는 2xx 응답에 대해 에러를 던지지 않으므로, 202를 명시적으로 처리해야 합니다.
+      if (res.status === 202) {
+        console.log('[API] ⏳ 분석 진행 중...');
+        throw new Error('analyzing');
+      }
+
+      if (res.data && res.data.success && res.data.data) {
         const report = res.data.data;
         await StorageService.saveDailyReport(report);
         console.log('[API] ✓ 서버에서 새 리포트 수신:', report.date);
         return report;
       }
     } catch (err: any) {
-      // 202: 분석 진행 중 (특별 처리)
+      if (err?.message === 'analyzing') {
+        throw err;
+      }
+      // 백엔드에서 에러로 던진 경우 (혹시 모를 예외상황 방어코드)
       if (err?.response?.status === 202) {
         console.log('[API] ⏳ 분석 진행 중...');
         throw new Error('analyzing');
