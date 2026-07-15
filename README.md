@@ -6,8 +6,20 @@
 - **API 키 불필요** — 네이버 증권 공개 API(국내) + 야후 파이낸스(미국) 사용
 - 파일 하나(`main.py`)로 동작, 브라우저에서 바로 확인
 - 화면은 1분마다 자동 갱신, "지금 새로고침" 버튼으로 즉시 조회 가능
+- **모바일 최적화** — 렌더에 배포해두면 휴대폰 브라우저로 URL만 열어서 바로 사용 (앱 설치 불필요)
 
-## 실행 방법 (Windows)
+## 렌더(Render)에 배포해서 모바일로 쓰기
+
+1. [render.com](https://render.com)에서 이 저장소를 New → Web Service로 연결
+2. `render.yaml`을 자동 인식하므로 대부분 그대로 "Create Web Service"만 누르면 됨
+   - (자동 인식이 안 되면 수동 설정: Build Command `pip install -r requirements.txt`, Start Command `uvicorn main:app --host 0.0.0.0 --port $PORT`)
+3. 배포가 끝나면 `https://xxxx.onrender.com` 형태의 URL이 생성됨
+4. 휴대폰 브라우저(사파리/크롬)에서 그 URL을 열면 바로 사용 가능 — 화면이 모바일 크기에 맞게 자동으로 최적화됨
+5. (선택) 홈 화면에 추가하면 앱처럼 아이콘으로 실행 가능 (브라우저의 "홈 화면에 추가" 기능)
+
+> ⚠️ 렌더 무료 요금제는 15분간 접속이 없으면 서버가 잠들고, 다음 접속 시 깨어나는 데 30~60초 정도 걸립니다. 이 시간 동안은 30분 자동 점검도 멈춥니다. 계속 깨어있게 하려면 유료 플랜을 쓰거나, 외부에서 주기적으로 핑(ping)을 보내는 서비스를 연결하면 됩니다.
+
+## 로컬(PC)에서 실행하기 (Windows)
 
 `start.bat` 을 더블클릭하면 끝. (패키지 설치 → 서버 실행 → 브라우저 자동 열림)
 
@@ -27,8 +39,9 @@ python main.py
 ```python
 SURGE_THRESHOLD = 5.0    # 급등 기준 (%)
 CHECK_INTERVAL_MIN = 30  # 점검 주기 (분)
-PORT = 8000              # 웹 포트
 ```
+
+포트는 로컬에서는 기본 8000번, 렌더에서는 렌더가 지정하는 `PORT` 환경변수를 자동으로 사용합니다.
 
 ## 구조
 
@@ -36,7 +49,9 @@ PORT = 8000              # 웹 포트
 stock management/
 ├── main.py           ← 서버 + 30분 주기 수집기 + 웹 화면 (전부 이 파일 하나)
 ├── requirements.txt  ← 필요 패키지 4개
-├── start.bat         ← 윈도우 실행 스크립트
+├── render.yaml        ← 렌더 배포 설정
+├── Procfile           ← 렌더 배포용 시작 명령 (백업용)
+├── start.bat          ← 윈도우 로컬 실행 스크립트
 └── README.md
 ```
 
