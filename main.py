@@ -2,8 +2,9 @@
 """
 급등주 알리미 (초간단 버전)
 
-코스피 / 코스닥 / 미국 주식시장을 30분마다 살펴서
-5% 이상 급등한 종목을 [회사명 · 상승률 · 현재가] 로 보여준다.
+코스피 / 코스닥 / S&P500(뉴욕거래소) / 나스닥 시장을 30분마다 살펴서
+5% 이상 급등 + 저가 종목(국내 1만원 이하, 미국 $10 이하) 중 상승률 상위 20개를
+[회사명 · 상승률 · 현재가] 로 보여준다.
 
 로컬 실행:  python main.py  →  브라우저가 자동으로 열림 (http://localhost:8000)
 렌더 배포:  uvicorn main:app --host 0.0.0.0 --port $PORT  (render.yaml 참고)
@@ -24,9 +25,17 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
 # ── 설정 ─────────────────────────────────────────────
-SURGE_THRESHOLD = 5.0   # 급등 기준 (%)
+SURGE_THRESHOLD = 5.0    # 급등 기준 (%)
+KR_PRICE_CAP = 10000     # 국내 종목 현재가 상한 (원)
+US_PRICE_CAP = 10.0      # 미국 종목 현재가 상한 ($)
+TOP_N = 20               # 시장별 최대 표시 개수 (상승률 상위)
 CHECK_INTERVAL_MIN = 30  # 점검 주기 (분)
 PORT = int(os.environ.get("PORT", 8000))  # 렌더는 PORT 환경변수로 포트를 지정함
+
+# 미국은 거래소 기준으로 나눔 (코스피/코스닥처럼) — 실제 지수 구성종목이 아니라
+# 나스닥 거래소 상장 종목 전체 vs 그 외(뉴욕증권거래소 등) 상장 종목 전체.
+NASDAQ_EXCHANGES = ["NMS", "NGM", "NCM"]   # 나스닥 (Global Select/Global/Capital Market)
+NYSE_EXCHANGES = ["NYQ", "ASE", "PCX"]     # 뉴욕증권거래소 계열 (NYSE / NYSE American / NYSE Arca)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
@@ -34,8 +43,11 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 state = {
     "updated_at": None,
     "threshold": SURGE_THRESHOLD,
+    "kr_price_cap": KR_PRICE_CAP,
+    "us_price_cap": US_PRICE_CAP,
+    "top_n": TOP_N,
     "interval_min": CHECK_INTERVAL_MIN,
-    "markets": {"KOSPI": [], "KOSDAQ": [], "US": []},
+    "markets": {"KOSPI": [], "KOSDAQ": [], "SP500": [], "NASDAQ": []},
     "errors": {},
 }
 _refresh_lock = threading.Lock()
@@ -43,7 +55,7 @@ _refresh_lock = threading.Lock()
 
 # ── 데이터 수집 ──────────────────────────────────────
 def fetch_korea(market: str) -> list:
-    """네이버 증권 '상승' 목록에서 5% 이상 급등 종목 수집 (market: KOSPI | KOSDAQ)"""
+    """네이버 증권 '상승' 목록에서 5% 이상 급등 + 1만원 이하 종목 상위 20개 수집 (market: KOSPI | KOSDAQ)"""
     result = []
     for page in range(1, 11):
         res = requests.get(
@@ -60,44 +72,44 @@ def fetch_korea(market: str) -> list:
         for s in stocks:
             try:
                 rate = float(str(s.get("fluctuationsRatio", "0")).replace(",", ""))
+                price = float(str(s.get("closePrice", "0")).replace(",", ""))
             except ValueError:
                 continue
             page_min = min(page_min, rate)
-            if rate >= SURGE_THRESHOLD:
+            if rate >= SURGE_THRESHOLD and price <= KR_PRICE_CAP:
                 result.append({
                     "name": s.get("stockName", ""),
                     "rate": round(rate, 2),
-                    "price": f'{s.get("closePrice", "-")}원',
+                    "price": f"{price:,.0f}원",
                 })
         # 상승률 내림차순 목록이므로 기준 미달 종목이 나오면 다음 페이지는 볼 필요 없음
         if page_min < SURGE_THRESHOLD:
             break
     result.sort(key=lambda x: x["rate"], reverse=True)
-    return result
+    return result[:TOP_N]
 
 
-def fetch_us() -> list:
-    """야후 파이낸스 'day_gainers' 스크리너에서 5% 이상 급등 종목 수집"""
+def fetch_us(exchanges: list) -> list:
+    """야후 파이낸스에서 5% 이상 급등 + $10 이하 + 지정 거래소(나스닥/뉴욕 등) 종목 상위 20개 수집"""
     quotes = []
     try:
         import yfinance as yf
-        quotes = yf.screen("day_gainers", count=100).get("quotes", [])
+        from yfinance.screener.query import EquityQuery
+        query = EquityQuery("and", [
+            EquityQuery("eq", ["region", "us"]),
+            EquityQuery("gte", ["percentchange", SURGE_THRESHOLD]),
+            EquityQuery("lte", ["intradayprice", US_PRICE_CAP]),
+            EquityQuery("is-in", ["exchange"] + exchanges),
+        ])
+        quotes = yf.screen(query, sortField="percentchange", sortAsc=False, size=TOP_N).get("quotes", [])
     except Exception:
-        # yfinance 실패 시 야후 공개 스크리너 API 직접 호출
-        res = requests.get(
-            "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved",
-            params={"scrIds": "day_gainers", "count": 100},
-            headers=HEADERS,
-            timeout=15,
-        )
-        res.raise_for_status()
-        quotes = res.json()["finance"]["result"][0]["quotes"]
+        quotes = _fetch_us_fallback(exchanges)
 
     result = []
     for q in quotes:
         rate = q.get("regularMarketChangePercent") or 0
         price = q.get("regularMarketPrice")
-        if rate < SURGE_THRESHOLD or price is None:
+        if price is None or rate < SURGE_THRESHOLD or price > US_PRICE_CAP:
             continue
         result.append({
             "name": q.get("shortName") or q.get("longName") or q.get("symbol", ""),
@@ -105,16 +117,36 @@ def fetch_us() -> list:
             "price": f"${float(price):,.2f}",
         })
     result.sort(key=lambda x: x["rate"], reverse=True)
-    return result
+    return result[:TOP_N]
+
+
+def _fetch_us_fallback(exchanges: list) -> list:
+    """야후 커스텀 스크리너 실패 시: 사전 정의 스크리너(day_gainers + small_cap_gainers)에서
+    지정 거래소에 해당하는 종목만 걸러서 반환."""
+    seen = {}
+    for scr_id in ("day_gainers", "small_cap_gainers"):
+        res = requests.get(
+            "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved",
+            params={"scrIds": scr_id, "count": 100},
+            headers=HEADERS,
+            timeout=15,
+        )
+        res.raise_for_status()
+        for q in res.json()["finance"]["result"][0]["quotes"]:
+            symbol = q.get("symbol")
+            if symbol and q.get("exchange") in exchanges:
+                seen[symbol] = q
+    return list(seen.values())
 
 
 def refresh():
-    """세 시장을 모두 조회해서 state 갱신 (실패한 시장은 이전 데이터 유지 + 오류 기록)"""
+    """네 시장을 모두 조회해서 state 갱신 (실패한 시장은 이전 데이터 유지 + 오류 기록)"""
     with _refresh_lock:
         jobs = {
             "KOSPI": lambda: fetch_korea("KOSPI"),
             "KOSDAQ": lambda: fetch_korea("KOSDAQ"),
-            "US": fetch_us,
+            "SP500": lambda: fetch_us(NYSE_EXCHANGES),
+            "NASDAQ": lambda: fetch_us(NASDAQ_EXCHANGES),
         }
         for market, job in jobs.items():
             try:
@@ -244,7 +276,8 @@ PAGE = """<!doctype html>
 <div class="grid">
   <div class="card"><h2>🇰🇷 코스피</h2><div id="KOSPI-info"></div><div class="list" id="KOSPI"></div></div>
   <div class="card"><h2>🇰🇷 코스닥</h2><div id="KOSDAQ-info"></div><div class="list" id="KOSDAQ"></div></div>
-  <div class="card"><h2>🇺🇸 미국</h2><div id="US-info"></div><div class="list" id="US"></div></div>
+  <div class="card"><h2>🇺🇸 S&amp;P 500</h2><div id="SP500-info"></div><div class="list" id="SP500"></div></div>
+  <div class="card"><h2>🇺🇸 나스닥</h2><div id="NASDAQ-info"></div><div class="list" id="NASDAQ"></div></div>
 </div>
 </main>
 <script>
@@ -253,8 +286,8 @@ function esc(s) {
 }
 function render(d) {
   document.getElementById('meta').textContent =
-    `+${d.threshold}% 이상 · ${d.interval_min}분마다 자동 점검 · 마지막 갱신: ${d.updated_at || '-'}`;
-  for (const m of ['KOSPI', 'KOSDAQ', 'US']) {
+    `+${d.threshold}% · 국내 ${d.kr_price_cap.toLocaleString()}원 이하 · 미국 $${d.us_price_cap} 이하 · 상위 ${d.top_n}개 · ${d.interval_min}분마다 자동 점검 · 마지막 갱신: ${d.updated_at || '-'}`;
+  for (const m of ['KOSPI', 'KOSDAQ', 'SP500', 'NASDAQ']) {
     const list = d.markets[m] || [];
     document.getElementById(m + '-info').innerHTML =
       (d.errors[m] ? `<div class="error">조회 실패: ${esc(d.errors[m])}</div>` : '') +
