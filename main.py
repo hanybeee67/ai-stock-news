@@ -223,7 +223,17 @@ PAGE = """<!doctype html>
   button#btn:active { background: #1d4ed8; }
   button#btn:disabled { opacity: .5; cursor: wait; }
   main { padding-top: 16px; }
+  .filter-bar { margin-bottom: 14px; }
+  select#marketSelect {
+    width: 100%; background: #1a2132; color: #e8ecf4; border: 1px solid #2a3450;
+    border-radius: 10px; padding: 11px 14px; font-size: 15px; font-weight: 600;
+    -webkit-appearance: none; appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238b94a8'><path d='M5.5 7.5l4.5 4.5 4.5-4.5' stroke='%238b94a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat; background-position: right 14px center; background-size: 16px;
+    padding-right: 38px;
+  }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .grid.single { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
   .card { background: #1a2132; border-radius: 14px; padding: 14px; min-width: 0; }
   .card h2 { font-size: 15px; margin-bottom: 2px; }
   .count { color: #8b94a8; font-size: 12px; margin-bottom: 8px; }
@@ -259,6 +269,7 @@ PAGE = """<!doctype html>
   @media (prefers-color-scheme: light) {
     body { background: #f4f6fb; color: #1a2132; }
     header { background: rgba(244, 246, 251, .92); border-bottom-color: #dfe4ee; }
+    select#marketSelect { background-color: #ffffff; color: #1a2132; border-color: #dfe4ee; }
     .card { background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     .row { border-bottom-color: #edf0f6; }
     .row .price { color: #4b5568; }
@@ -273,21 +284,39 @@ PAGE = """<!doctype html>
   <button id="btn" onclick="manualRefresh()">지금 새로고침</button>
 </header>
 <main>
-<div class="grid">
-  <div class="card"><h2>🇰🇷 코스피</h2><div id="KOSPI-info"></div><div class="list" id="KOSPI"></div></div>
-  <div class="card"><h2>🇰🇷 코스닥</h2><div id="KOSDAQ-info"></div><div class="list" id="KOSDAQ"></div></div>
-  <div class="card"><h2>🇺🇸 S&amp;P 500</h2><div id="SP500-info"></div><div class="list" id="SP500"></div></div>
-  <div class="card"><h2>🇺🇸 나스닥</h2><div id="NASDAQ-info"></div><div class="list" id="NASDAQ"></div></div>
+<div class="filter-bar">
+  <select id="marketSelect" onchange="applyFilter()">
+    <option value="ALL">전체 보기</option>
+    <option value="KOSPI">🇰🇷 코스피</option>
+    <option value="KOSDAQ">🇰🇷 코스닥</option>
+    <option value="SP500">🇺🇸 S&amp;P 500</option>
+    <option value="NASDAQ">🇺🇸 나스닥</option>
+  </select>
+</div>
+<div class="grid" id="grid">
+  <div class="card" id="card-KOSPI"><h2>🇰🇷 코스피</h2><div id="KOSPI-info"></div><div class="list" id="KOSPI"></div></div>
+  <div class="card" id="card-KOSDAQ"><h2>🇰🇷 코스닥</h2><div id="KOSDAQ-info"></div><div class="list" id="KOSDAQ"></div></div>
+  <div class="card" id="card-SP500"><h2>🇺🇸 S&amp;P 500</h2><div id="SP500-info"></div><div class="list" id="SP500"></div></div>
+  <div class="card" id="card-NASDAQ"><h2>🇺🇸 나스닥</h2><div id="NASDAQ-info"></div><div class="list" id="NASDAQ"></div></div>
 </div>
 </main>
 <script>
+const MARKETS = ['KOSPI', 'KOSDAQ', 'SP500', 'NASDAQ'];
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function applyFilter() {
+  const val = document.getElementById('marketSelect').value;
+  for (const m of MARKETS) {
+    document.getElementById('card-' + m).style.display = (val === 'ALL' || val === m) ? '' : 'none';
+  }
+  document.getElementById('grid').classList.toggle('single', val !== 'ALL');
+  try { localStorage.setItem('marketSelect', val); } catch (e) {}
 }
 function render(d) {
   document.getElementById('meta').textContent =
     `+${d.threshold}% · 국내 ${d.kr_price_cap.toLocaleString()}원 이하 · 미국 $${d.us_price_cap} 이하 · 상위 ${d.top_n}개 · ${d.interval_min}분마다 자동 점검 · 마지막 갱신: ${d.updated_at || '-'}`;
-  for (const m of ['KOSPI', 'KOSDAQ', 'SP500', 'NASDAQ']) {
+  for (const m of MARKETS) {
     const list = d.markets[m] || [];
     document.getElementById(m + '-info').innerHTML =
       (d.errors[m] ? `<div class="error">조회 실패: ${esc(d.errors[m])}</div>` : '') +
@@ -308,6 +337,11 @@ async function manualRefresh() {
   try { render(await (await fetch('/api/refresh', {method: 'POST'})).json()); } catch (e) {}
   btn.disabled = false; btn.textContent = '지금 새로고침';
 }
+try {
+  const saved = localStorage.getItem('marketSelect');
+  if (saved && MARKETS.includes(saved)) document.getElementById('marketSelect').value = saved;
+} catch (e) {}
+applyFilter();
 load();
 setInterval(load, 60 * 1000);  // 화면은 1분마다 서버 데이터를 다시 읽음
 </script>
